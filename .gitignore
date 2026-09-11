@@ -22,6 +22,16 @@ test/db/
 *.db-shm
 *.db-wal
 
+# Planning and evaluation notes — kept local.
+#
+# These are working documents rather than project documentation. They stay on
+# your machine; nothing else depends on them.
+#
+# Note: adding a path here does NOT untrack files already committed. These were
+# committed once, so they also had to be removed with:
+#   git rm -r --cached docs
+docs/
+
 node_modules/
 *.log
 .DS_Store

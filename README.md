@@ -4,7 +4,7 @@ Agent hint cards that are ranked against **your own prior sessions**, and that
 learn from every accept / reject so the next hint is more likely to be one you
 want.
 
-Implements Phases 0–4 of `docs/design-plan.md`.
+Implements Phases 0–4 of the design plan.
 
 ## Project layout
 
@@ -27,17 +27,14 @@ adaptive-hints/
 │   ├── language.mjs       sentence frames and vocabulary
 │   ├── questions-a2.mjs   hand-written test questions
 │   └── db/                generated, not committed
-├── docs/
-│   ├── design-plan.md     the original design and its phases
-│   └── evaluation-plan.md how the system is tested, and why
 ├── artifacts/           your own data, never committed
 └── .gitignore
 ```
 
-Two things are deliberately kept out of version control: `artifacts/`, which
-holds real repository names and file paths from your own sessions, and
-`test/db/`, which is 23 MB of generated data reproducible byte for byte by
-`node test/build.mjs`.
+Three things are deliberately kept out of version control: `artifacts/`, which
+holds real repository names and file paths from your own sessions; `test/db/`,
+which is 23 MB of generated data reproducible byte for byte by
+`node test/build.mjs`; and `docs/`, which holds local planning notes.
 
 ## What it does
 
