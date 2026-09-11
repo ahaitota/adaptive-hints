@@ -4,7 +4,40 @@ Agent hint cards that are ranked against **your own prior sessions**, and that
 learn from every accept / reject so the next hint is more likely to be one you
 want.
 
-Implements Phases 0–4 of `adaptive-hints-plan.md` in miniature.
+Implements Phases 0–4 of `docs/design-plan.md`.
+
+## Project layout
+
+```
+adaptive-hints/
+├── extension.mjs        entry point — must keep this name and location,
+│                        the app discovers extensions by finding it
+├── src/                 implementation
+│   ├── retrieval.mjs      search over the local session store
+│   ├── ranker.mjs         scoring, gating, exploration
+│   ├── store.mjs          the learning log and settings
+│   ├── renderer.mjs       the canvas panel
+│   ├── prompt-filter.mjs  real prompts vs runtime-injected text
+│   └── changed-files.mjs  files in play, from git
+├── test/                evaluation suite
+│   ├── run-group-a.mjs    runs the tests, prints a report
+│   ├── build.mjs          builds the fixture databases
+│   ├── generate.mjs       session generator
+│   ├── topics.mjs         ten unrelated subject areas
+│   ├── language.mjs       sentence frames and vocabulary
+│   ├── questions-a2.mjs   hand-written test questions
+│   └── db/                generated, not committed
+├── docs/
+│   ├── design-plan.md     the original design and its phases
+│   └── evaluation-plan.md how the system is tested, and why
+├── artifacts/           your own data, never committed
+└── .gitignore
+```
+
+Two things are deliberately kept out of version control: `artifacts/`, which
+holds real repository names and file paths from your own sessions, and
+`test/db/`, which is 23 MB of generated data reproducible byte for byte by
+`node test/build.mjs`.
 
 ## What it does
 

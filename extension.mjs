@@ -17,18 +17,18 @@ import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/exte
 import {
     generateCandidates, buildHintCandidates, storeAvailable, fetchSessionContext,
     setSessionStore, sessionStorePath, DEFAULT_SESSION_STORE,
-} from "./retrieval.mjs";
-import { rankAndGate, summarize, DEFAULT_CONFIG } from "./ranker.mjs";
-import { renderHtml } from "./renderer.mjs";
-import { extractUserTask } from "./prompt-filter.mjs";
-import { changedFiles } from "./changed-files.mjs";
+} from "./src/retrieval.mjs";
+import { rankAndGate, summarize, DEFAULT_CONFIG } from "./src/ranker.mjs";
+import { renderHtml } from "./src/renderer.mjs";
+import { extractUserTask } from "./src/prompt-filter.mjs";
+import { changedFiles } from "./src/changed-files.mjs";
 import {
     logImpression, logSuppressed, logHoldout, logOutcome,
     readLog, saveProposal, loadProposal, supersedePending,
     computeCounters, acceptanceRate, loadSettings, saveSettings, TEST_MODE_GATE,
     logAgentJudgment, queueAcceptedContext, takeAcceptedContext,
     logInjection, readInjections, LOG_FILE, ARTIFACT_DIR,
-} from "./store.mjs";
+} from "./src/store.mjs";
 
 const servers = new Map(); // instanceId -> { server, url, clients:Set }
 

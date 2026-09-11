@@ -8,7 +8,7 @@ runner.
 Two commands, from this folder:
 
 ```
-cd <your copilot extensions folder>/adaptive-hints/fixtures
+cd <project folder>/test
 
 node run-group-a.mjs    # run the tests (about a minute)
 node build.mjs          # rebuild the fake databases
@@ -67,8 +67,8 @@ reflects human judgement rather than construction.
 ## Building
 
 ```
-node fixtures/build.mjs      # rebuild all four databases
-node fixtures/run-group-a.mjs # run the Group A tests
+node test/build.mjs      # rebuild all four databases
+node test/run-group-a.mjs # run the Group A tests
 ```
 
 Building is deterministic — a fixed random seed and a fixed reference date mean

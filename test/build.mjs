@@ -13,7 +13,7 @@
 
 import { writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { TOPICS, FILLER, renderTemplate } from "./topics.mjs";
 import { A2_QUESTIONS } from "./questions-a2.mjs";
 import {
@@ -267,7 +267,7 @@ function main() {
         // No build timestamp: it would change on every rebuild and defeat the
         // determinism the fixed seed and reference date provide.
         backgroundSessions: BACKGROUND,
-        databases: Object.fromEntries(Object.entries(built).map(([k, v]) => [k, v.path])),
+        databases: Object.fromEntries(Object.entries(built).map(([k, v]) => [k, basename(v.path)])),
         core: built.core.key,
         sizeBias: built.sizeBias.key,
         paraphrase: built.paraphrase.key,

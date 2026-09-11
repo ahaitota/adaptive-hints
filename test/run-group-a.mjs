@@ -6,8 +6,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { DB_DIR } from "./generate.mjs";
-import { setSessionStore, generateCandidates, buildHintCandidates } from "../retrieval.mjs";
-import { rankAndGate } from "../ranker.mjs";
+import { setSessionStore, generateCandidates, buildHintCandidates } from "../src/retrieval.mjs";
+import { rankAndGate } from "../src/ranker.mjs";
 
 const KEY_PATH = join(DB_DIR, "answer-key.json");
 if (!existsSync(KEY_PATH)) {
@@ -15,6 +15,11 @@ if (!existsSync(KEY_PATH)) {
     process.exit(1);
 }
 const key = JSON.parse(readFileSync(KEY_PATH, "utf8"));
+// The answer key stores bare filenames, not absolute paths: a path baked in at
+// build time breaks the moment the project is moved or cloned elsewhere.
+for (const [name, file] of Object.entries(key.databases)) {
+    key.databases[name] = join(DB_DIR, file);
+}
 const results = [];
 
 function report(id, name, passed, detail) {
