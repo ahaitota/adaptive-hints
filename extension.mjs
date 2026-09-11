@@ -1,0 +1,687 @@
+// Extension: adaptive-hints
+// Behaviour-ranked agent hints with accept/reject learning.
+//
+// Pipeline (see adaptive-hints-plan.md):
+//   retrieval.mjs  → candidates from the user's own session history
+//   ranker.mjs     → personalize (Beta-Bernoulli), gate, explore
+//   store.mjs      → log every impression, outcome and suppression
+//   renderer.mjs   → the accept/reject card in the canvas panel
+//
+// This file is wiring only.
+
+import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
+
+import {
+    generateCandidates, buildHintCandidates, storeAvailable, fetchSessionContext,
+    setSessionStore, sessionStorePath, DEFAULT_SESSION_STORE,
+} from "./retrieval.mjs";
+import { rankAndGate, summarize, DEFAULT_CONFIG } from "./ranker.mjs";
+import { renderHtml } from "./renderer.mjs";
+import { extractUserTask } from "./prompt-filter.mjs";
+import { changedFiles } from "./changed-files.mjs";
+import {
+    logImpression, logSuppressed, logHoldout, logOutcome,
+    readLog, saveProposal, loadProposal, supersedePending,
+    computeCounters, acceptanceRate, loadSettings, saveSettings, TEST_MODE_GATE,
+    logAgentJudgment, queueAcceptedContext, takeAcceptedContext,
+    logInjection, readInjections, LOG_FILE, ARTIFACT_DIR,
+} from "./store.mjs";
+
+const servers = new Map(); // instanceId -> { server, url, clients:Set }
+
+// Restore a fixture database chosen in a previous run. Without this the
+// setting would silently revert to the real store on every extension reload,
+// and a test suite would look like it was passing against the fixture while
+// actually reading real sessions.
+{
+    const saved = loadSettings().sessionStorePath;
+    if (saved && existsSync(saved)) setSessionStore(saved);
+}
+
+// Set once joinSession resolves. Used to post a short confirmation to the
+// timeline when a hint is accepted — otherwise Accept is completely silent
+// and the user has no way to tell the click did anything.
+let session = null;
+
+function broadcast() {
+    for (const { clients } of servers.values()) {
+        for (const res of clients) {
+            try {
+                res.write("data: update\n\n");
+            } catch {
+                // Client vanished mid-write; the close handler prunes it.
+            }
+        }
+    }
+}
+
+/** Current panel state: the active proposal plus derived learning metrics. */
+function currentState(sessionId) {
+    const proposal = loadProposal(sessionId);
+    const events = readLog();
+
+    // The agent's own relevance judgment must NOT dismiss the card. It is a
+    // ranking signal, not a decision on the user's behalf — and because the
+    // agent records it within seconds of the prompt, treating it as a decision
+    // made cards vanish before the user could read them.
+    //
+    // Keeping the two separate also makes the interesting case visible:
+    // when the user accepts something the agent judged irrelevant, that
+    // disagreement is the most informative feedback available.
+    const outcomes = new Map();
+    const agentJudgments = new Map();
+    for (const e of events) {
+        if (e.kind !== "outcome") continue;
+        if (e.outcome === "agent_relevant" || e.outcome === "agent_irrelevant") {
+            agentJudgments.set(e.hintId, { verdict: e.outcome, reason: e.reason ?? null });
+        } else {
+            outcomes.set(e.hintId, e.outcome);
+        }
+    }
+
+    const hints = (proposal?.shown ?? []).map((h) => ({
+        ...h,
+        outcome: outcomes.get(h.hintId) ?? null,
+        agentJudgment: agentJudgments.get(h.hintId) ?? null,
+    }));
+    return {
+        task: proposal?.task ?? "",
+        trigger: proposal?.trigger ?? "",
+        holdout: proposal?.holdout ?? false,
+        suppressed: proposal?.suppressed ?? [],
+        testMode: loadSettings().testMode === true,
+        fixtureStore: sessionStorePath() !== DEFAULT_SESSION_STORE ? sessionStorePath() : null,
+        injections: readInjections(sessionId),
+        hints,
+        stats: summarize(events),
+    };
+}
+
+/**
+ * Turn an accepted hint into something the agent can actually use.
+ *
+ * Without this, Accept was a pure vote: it moved a counter and nothing else.
+ * The card promises "reuse its decisions, validation steps, and pitfalls", so
+ * accepting has to actually deliver those.
+ *
+ * Delivery is deliberately NOT `session.send`: that creates a visible turn the
+ * user did not write. The briefing is queued and handed to the agent through
+ * the hook's `additionalContext` on the next prompt — invisible, and the same
+ * channel the hint notification already uses.
+ */
+function deliverAcceptedHint(impression, sessionId) {
+    const action = impression?.action;
+    if (!action) return null;
+
+    const ctx = action.sessionId ? fetchSessionContext(action.sessionId) : null;
+    const lines = [
+        "[adaptive-hints:accepted] The user accepted this hint in the Adaptive hints panel:",
+        `${impression.title} — ${impression.body}`,
+        "",
+    ];
+
+    if (ctx) {
+        lines.push(`Context from the prior session (${ctx.sessionId}):`);
+        if (ctx.summary) lines.push(`- Summary: ${ctx.summary}`);
+        if (ctx.repository) lines.push(`- Repo/branch: ${ctx.repository} @ ${ctx.branch ?? "?"}`);
+        if (ctx.updatedAt) lines.push(`- Last worked on: ${ctx.updatedAt}`);
+        if (ctx.originalRequest) lines.push(`- Original request: ${ctx.originalRequest}`);
+        if (ctx.checkpoint) {
+            const c = ctx.checkpoint;
+            if (c.overview) lines.push(`- Overview: ${c.overview}`);
+            if (c.workDone) lines.push(`- Work done: ${c.workDone}`);
+            if (c.technical) lines.push(`- Technical details: ${c.technical}`);
+            if (c.nextSteps) lines.push(`- Next steps left: ${c.nextSteps}`);
+            if (c.importantFiles) lines.push(`- Important files: ${c.importantFiles}`);
+        }
+        if (ctx.files?.length) lines.push(`- Files touched: ${ctx.files.slice(0, 10).join(", ")}`);
+        if (ctx.recentTurns?.length) {
+            lines.push("- How it ended:");
+            for (const t of ctx.recentTurns) {
+                if (t.user) lines.push(`    user: ${t.user}`);
+                if (t.assistant) lines.push(`    assistant: ${t.assistant}`);
+            }
+        }
+    } else if (action.kind === "load_file_scope") {
+        lines.push(`Files from the prior session: ${(action.files ?? []).join(", ")}`);
+    } else {
+        lines.push("(The prior session could not be loaded from the session store.)");
+    }
+
+    lines.push(
+        "",
+        "Use this as background for the user's current task: reuse the decisions, validation steps and pitfalls where they apply, and mention in one short sentence what you took from it. Do not restate it wholesale, and do not quote this block back to the user.",
+    );
+
+    const text = lines.join("\n");
+    queueAcceptedContext(sessionId, text);
+
+    // Confirm in the timeline. `session.log` posts a status line rather than a
+    // chat turn, so it reads as system feedback instead of something the user
+    // appears to have typed.
+    //
+    // The wording says "will reach" on purpose: at click time the briefing is
+    // only queued. It is handed over via `additionalContext` on the next
+    // prompt, so claiming it was already sent would set the wrong expectation
+    // about when the agent can act on it.
+    const label = ctx?.summary || action.sessionId || "a prior session";
+    const kb = (text.length / 1024).toFixed(1);
+    session?.log(
+        `Hint accepted — context from "${label}" (${kb} KB) will reach the agent with your next message.`,
+        { level: "info" },
+    )?.catch?.(() => {
+        // Never let a status line break outcome recording.
+    });
+
+    return { queued: true, priorSessionId: action.sessionId ?? null, chars: text.length };
+}
+
+function recordOutcome(hintId, outcome, sessionId) {
+    const valid = ["accepted", "rejected", "ignored", "preempted"];
+    if (!valid.includes(outcome)) throw new CanvasError("invalid_outcome", `outcome must be one of ${valid.join(", ")}`);
+
+    const proposal = loadProposal(sessionId);
+    const impression = (proposal?.shown ?? []).find((h) => h.hintId === hintId);
+
+    // An outcome for a hint that was never shown is not a real observation.
+    // Accepting it would let junk into the log that the counters silently drop.
+    if (!impression) {
+        const known = readLog().some((e) => e.kind === "impression" && e.hintId === hintId);
+        if (!known) throw new CanvasError("unknown_hint", `No impression logged for hintId "${hintId}"`);
+    }
+
+    const timeToDecisionMs = impression ? Date.now() - (proposal.at ?? Date.now()) : null;
+
+    logOutcome(hintId, outcome, { timeToDecisionMs, type: impression?.type, trigger: proposal?.trigger });
+
+    const delivery = outcome === "accepted" ? deliverAcceptedHint(impression, sessionId) : null;
+
+    broadcast();
+    return { hintId, outcome, timeToDecisionMs, action: impression?.action ?? null, delivery };
+}
+
+/** Full propose pipeline: retrieve → rank → gate → log → persist. */
+function propose({ task, trigger = "session_start", files = [], repository, sessionId, config = {} }) {
+    const { candidates, reason } = generateCandidates({ task, excludeSessionId: sessionId, files, repository });
+    const hintCandidates = buildHintCandidates(candidates, { files });
+    const result = rankAndGate(hintCandidates, { trigger, sessionId, config });
+
+    // Gate telemetry is recorded regardless of what happens below — it is data
+    // about the gate, not about any particular hint.
+    for (const s of result.suppressed) logSuppressed(s);
+    if (result.holdout) logHoldout({ trigger, sessionId, candidates: hintCandidates.length });
+
+    const decided = new Set(readLog().filter((e) => e.kind === "outcome").map((e) => e.hintId));
+    const prev = loadProposal(sessionId);
+    const prevLive = (prev?.shown ?? []).some((h) => !decided.has(h.hintId));
+
+    // If this pass produced nothing, leave any still-unanswered hint alone.
+    // Overwriting it would blank the panel and log an "ignored" the user never
+    // chose — which matters now that this runs on every prompt.
+    if (!result.shown.length && prevLive) {
+        return { ...prev, skipped: true, candidateCount: hintCandidates.length };
+    }
+
+    // A genuinely new hint replaces the old one, so anything left unanswered
+    // there is an honest "ignored".
+    if (prev?.shown?.length) supersedePending(prev.shown.map((h) => h.hintId));
+
+    for (const h of result.shown) {
+        logImpression({
+            hintId: h.hintId, type: h.type, trigger, sessionId,
+            score: h.finalScore, retrievalScore: h.retrievalScore,
+            personalMultiplier: h.personalMultiplier, explore: h.explore,
+            evidence: h.evidence, title: h.title,
+        });
+    }
+
+    const proposal = {
+        at: Date.now(), task, trigger, sessionId,
+        holdout: result.holdout,
+        shown: result.shown,
+        suppressed: result.suppressed,
+        retrievalReason: reason,
+        candidateCount: hintCandidates.length,
+    };
+    saveProposal(sessionId, proposal);
+    broadcast();
+    return proposal;
+}
+
+/**
+ * Automatic trigger. Runs on each submitted prompt; the gate (threshold,
+ * cooldowns, reject-suppressor, max 1 visible) is what keeps this from
+ * becoming noise, so this only adds the cheap pre-filters.
+ */
+function autoPropose(prompt, sessionId, workingDirectory) {
+    const settings = loadSettings();
+    if (!settings.autoPropose || !storeAvailable()) return null;
+
+    const task = extractUserTask(prompt, { minChars: settings.minPromptChars });
+    if (!task) return null;
+
+    // Files in play, so `reuse_file_scope` has something to match against.
+    // Non-blocking, and empty outside a git repo — which simply means no
+    // file-scope hints rather than a failure.
+    const files = changedFiles(workingDirectory);
+
+    // User-configured gate overrides (e.g. cooldowns disabled for testing).
+    const p = propose({ task, files, trigger: "prompt_submitted", sessionId, config: settings.gate ?? {} });
+    if (p.skipped || p.holdout || !p.shown?.length) return null;
+    return p.shown[0];
+}
+
+async function startServer(instanceId, sessionId) {
+    const clients = new Set();
+    const server = createServer((req, res) => {
+        const url = new URL(req.url, "http://127.0.0.1");
+
+        if (url.pathname === "/events") {
+            res.writeHead(200, {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                Connection: "keep-alive",
+            });
+            res.write("data: connected\n\n");
+            clients.add(res);
+            req.on("close", () => clients.delete(res));
+            return;
+        }
+
+        if (url.pathname === "/state") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(currentState(sessionId)));
+            return;
+        }
+
+        if (url.pathname === "/outcome" && req.method === "POST") {
+            // Collect Buffers and decode once. `body += chunk` decodes each
+            // chunk separately, so a multi-byte character split across a TCP
+            // boundary becomes two U+FFFD replacement characters. Hint IDs are
+            // ASCII today, but the bug is silent and only shows up under
+            // chunking, which is exactly how it survives testing.
+            const chunks = [];
+            let size = 0;
+            let aborted = false;
+            req.on("data", (c) => {
+                if (aborted) return;
+                const buf = Buffer.isBuffer(c) ? c : Buffer.from(c);
+                size += buf.length;
+                if (size > 64 * 1024) {
+                    aborted = true;
+                    res.writeHead(413, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "body too large" }));
+                    req.destroy();
+                    return;
+                }
+                chunks.push(buf);
+            });
+            req.on("end", () => {
+                if (aborted) return;
+                try {
+                    const body = Buffer.concat(chunks).toString("utf8");
+                    const { hintId, outcome } = JSON.parse(body || "{}");
+                    const out = recordOutcome(hintId, outcome, sessionId);
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify(out));
+                } catch (err) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: String(err?.message ?? err) }));
+                }
+            });
+            return;
+        }
+
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderHtml());
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address();
+    return { server, url: `http://127.0.0.1:${port}/`, clients };
+}
+
+session = await joinSession({
+    canvases: [
+        createCanvas({
+            id: "adaptive-hints",
+            displayName: "Adaptive hints",
+            description:
+                "Proposes accept/reject hint cards ranked against the user's own prior sessions, and learns from each accept/reject to raise future acceptance. Open it and call `propose` with the user's current task.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    task: { type: "string", description: "What the user is doing now; drives retrieval." },
+                    trigger: { type: "string", description: "Trigger point, e.g. session_start, post_plan, pre_commit, on_idle." },
+                    files: { type: "array", items: { type: "string" }, description: "Files currently in play, enables the overlap signal." },
+                    repository: { type: "string" },
+                },
+            },
+            actions: [
+                {
+                    name: "propose",
+                    description: "Retrieve, rank, gate and display hints for the current task. Logs an impression for each hint shown.",
+                    inputSchema: {
+                        type: "object",
+                        required: ["task"],
+                        properties: {
+                            task: { type: "string" },
+                            trigger: { type: "string" },
+                            files: { type: "array", items: { type: "string" } },
+                            repository: { type: "string" },
+                            config: {
+                                type: "object",
+                                description: "Override gate/learning knobs, e.g. scoreThreshold, maxVisible, holdoutRate, epsilon.",
+                                additionalProperties: true,
+                            },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const { task, trigger, files, repository, config } = ctx.input ?? {};
+                        if (!storeAvailable()) {
+                            throw new CanvasError("session_store_unavailable", `Cannot read ${sessionStorePath()}`);
+                        }
+                        // Saved settings are the base; a per-call config wins.
+                        // Without this, manual proposals silently ignore the
+                        // user's own gate configuration.
+                        const settings = loadSettings();
+                        const p = propose({
+                            task, trigger, files, repository,
+                            config: { ...(settings.gate ?? {}), ...(config ?? {}) },
+                            sessionId: ctx.sessionId,
+                        });
+                        return {
+                            holdout: p.holdout,
+                            candidateCount: p.candidateCount,
+                            retrievalReason: p.retrievalReason,
+                            shown: p.shown.map((h) => ({
+                                hintId: h.hintId, type: h.type, title: h.title, body: h.body,
+                                finalScore: Number(h.finalScore.toFixed(3)),
+                                retrievalScore: Number(h.retrievalScore.toFixed(3)),
+                                acceptanceRate: Number(h.acceptanceRate.toFixed(3)),
+                                observations: h.observations,
+                                explore: h.explore,
+                                evidence: h.evidence,
+                            })),
+                            suppressed: p.suppressed.map((s) => ({ type: s.type, reason: s.reason, score: Number((s.score ?? 0).toFixed(3)) })),
+                        };
+                    },
+                },
+                {
+                    name: "record_outcome",
+                    description: "Record accept/reject/ignore/preempted for a hint. Use `preempted` when the user did the suggested thing without clicking.",
+                    inputSchema: {
+                        type: "object",
+                        required: ["hintId", "outcome"],
+                        properties: {
+                            hintId: { type: "string" },
+                            outcome: { type: "string", enum: ["accepted", "rejected", "ignored", "preempted"] },
+                        },
+                    },
+                    handler: async (ctx) => recordOutcome(ctx.input.hintId, ctx.input.outcome, ctx.sessionId),
+                },
+                {
+                    name: "stats",
+                    description: "Return the Phase-5 evaluation metrics and the learned per-type acceptance counters.",
+                    handler: async () => {
+                        const events = readLog();
+                        const counters = computeCounters();
+                        const perType = [...counters.values()].map((c) => ({
+                            ...c,
+                            posteriorAcceptRate: Number(acceptanceRate(counters, c.type, c.trigger).rate.toFixed(3)),
+                        }));
+                        const settings = loadSettings();
+                        return {
+                            metrics: summarize(events), perType,
+                            config: { ...DEFAULT_CONFIG, ...(settings.gate ?? {}) },
+                            testMode: settings.testMode === true,
+                            activeSessionStore: sessionStorePath(),
+                            usingFixture: sessionStorePath() !== DEFAULT_SESSION_STORE,
+                            logFile: LOG_FILE, artifactDir: ARTIFACT_DIR,
+                        };
+                    },
+                },
+                {
+                    name: "explain",
+                    description: "Explain, without showing anything, how the current task would be scored and gated. Use for tuning; logs nothing.",
+                    inputSchema: {
+                        type: "object",
+                        required: ["task"],
+                        properties: {
+                            task: { type: "string" },
+                            files: { type: "array", items: { type: "string" } },
+                            trigger: { type: "string" },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const { task, files = [], trigger = "session_start" } = ctx.input ?? {};
+                        const { candidates, reason } = generateCandidates({ task, excludeSessionId: ctx.sessionId, files });
+                        return {
+                            retrievalReason: reason,
+                            topCandidates: candidates.slice(0, 5).map((c) => ({
+                                sessionId: c.sessionId,
+                                summary: c.summary,
+                                repository: c.repository,
+                                updatedAt: c.updatedAt,
+                                retrievalScore: Number(c.retrievalScore.toFixed(3)),
+                                textScore: Number(c.textScore.toFixed(3)),
+                                fileOverlap: Number(c.fileOverlap.toFixed(3)),
+                                recency: Number(c.recency.toFixed(3)),
+                            })),
+                            wouldShow: rankAndGate(buildHintCandidates(candidates, { files }), {
+                                trigger, sessionId: ctx.sessionId,
+                                config: loadSettings().gate ?? {},
+                            }),
+                        };
+                    },
+                },
+                {
+                    name: "record_relevance",
+                    description: "Record the agent's own relevance judgment for a hint it was offered. Call this every time you decide whether to surface a hint — especially when you decide NOT to. Counts at half the weight of a user click.",
+                    inputSchema: {
+                        type: "object",
+                        required: ["hintId", "relevant"],
+                        properties: {
+                            hintId: { type: "string" },
+                            relevant: { type: "boolean", description: "True if you surfaced it as genuinely relevant." },
+                            reason: { type: "string", description: "One short phrase, e.g. 'topically unrelated to the question'." },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const { hintId, relevant, reason } = ctx.input ?? {};
+                        const known = readLog().some((e) => e.kind === "impression" && e.hintId === hintId);
+                        if (!known) throw new CanvasError("unknown_hint", `No impression logged for hintId "${hintId}"`);
+                        logAgentJudgment(hintId, relevant, reason);
+                        broadcast();
+                        return { hintId, judgment: relevant ? "agent_relevant" : "agent_irrelevant", reason: reason ?? null };
+                    },
+                },
+                {
+                    name: "configure",
+                    description: "Read or change settings. `testMode: true` disables both cooldowns and the holdout so hints fire on every prompt — useful for seeing the system work, but the resulting volume is not representative.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            autoPropose: { type: "boolean", description: "Fire hints automatically on each prompt." },
+                            minPromptChars: { type: "number", description: "Prompts shorter than this are skipped." },
+                            testMode: { type: "boolean", description: "Zero both cooldowns and the holdout rate; false restores shipped defaults." },
+                            cooldownMinutes: { type: "number", description: "Per hint-type cooldown." },
+                            globalCooldownMinutes: { type: "number", description: "Cooldown across all types." },
+                            scoreThreshold: { type: "number", description: "Minimum final score to show a hint." },
+                            maxVisible: { type: "number", description: "Hints shown per trigger point." },
+                            holdoutRate: { type: "number", description: "Fraction of trigger points deliberately shown nothing." },
+                            epsilon: { type: "number", description: "Exploration rate." },
+                            sessionStorePath: {
+                                type: ["string", "null"],
+                                description: "Absolute path to an alternative session database for evaluation runs. Pass null to restore the real one. Only the searched corpus moves; the learning log and settings stay put.",
+                            },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const input = ctx.input ?? {};
+                        const patch = {};
+                        if (typeof input.autoPropose === "boolean") patch.autoPropose = input.autoPropose;
+                        if (typeof input.minPromptChars === "number") patch.minPromptChars = input.minPromptChars;
+
+                        if ("sessionStorePath" in input) {
+                            const p = input.sessionStorePath;
+                            if (p !== null && typeof p !== "string") {
+                                throw new CanvasError("invalid_path", "sessionStorePath must be a string or null");
+                            }
+                            // Validate up front. A typo'd path would otherwise
+                            // surface as "no hints ever", which looks like a
+                            // ranking failure and wastes a debugging session.
+                            if (p !== null) {
+                                if (!existsSync(p)) throw new CanvasError("store_not_found", `No file at ${p}`);
+                                try {
+                                    const probe = new DatabaseSync(p, { readOnly: true });
+                                    const n = probe.prepare("SELECT COUNT(*) AS n FROM search_index").get().n;
+                                    probe.close();
+                                    if (!n) {
+                                        throw new CanvasError(
+                                            "store_not_indexed",
+                                            `${p} has an empty search_index. Rows written to 'turns' are not searchable until they are also written to 'search_index'.`,
+                                        );
+                                    }
+                                } catch (err) {
+                                    if (err instanceof CanvasError) throw err;
+                                    throw new CanvasError("store_unreadable", `Cannot read ${p}: ${err?.message ?? err}`);
+                                }
+                            }
+                            patch.sessionStorePath = p;
+                            setSessionStore(p);
+                        }
+
+                        const current = loadSettings();
+                        let gate = { ...(current.gate ?? {}) };
+
+                        if (typeof input.testMode === "boolean") {
+                            patch.testMode = input.testMode;
+                            // Toggling off clears the overrides rather than
+                            // leaving zeroed cooldowns silently in place.
+                            gate = input.testMode ? { ...gate, ...TEST_MODE_GATE } : {};
+                        }
+                        for (const k of ["cooldownMinutes", "globalCooldownMinutes", "scoreThreshold", "maxVisible", "holdoutRate", "epsilon"]) {
+                            if (typeof input[k] === "number") gate[k] = input[k];
+                        }
+                        patch.gate = gate;
+
+                        const saved = Object.keys(input).length ? saveSettings(patch) : current;
+                        broadcast();
+                        return {
+                            ...saved,
+                            effectiveGate: { ...DEFAULT_CONFIG, ...(saved.gate ?? {}) },
+                            activeSessionStore: sessionStorePath(),
+                            usingFixture: sessionStorePath() !== DEFAULT_SESSION_STORE,
+                        };
+                    },
+                },
+            ],
+            open: async (ctx) => {
+                let entry = servers.get(ctx.instanceId);
+                if (!entry) {
+                    entry = await startServer(ctx.instanceId, ctx.sessionId);
+                    servers.set(ctx.instanceId, entry);
+                }
+                // Opening with a task proposes; opening bare just rehydrates.
+                //
+                // `open` is re-invoked on provider reconnect, extension reload
+                // and host re-focus. Re-proposing there would log a fresh
+                // impression and mark the live one "ignored" — recording user
+                // disinterest that never happened. So only propose when the
+                // previous proposal is not still awaiting an answer.
+                const task = ctx.input?.task;
+                if (task) {
+                    const trigger = ctx.input.trigger ?? "session_start";
+                    const prev = loadProposal(ctx.sessionId);
+                    const decided = new Set(
+                        readLog().filter((e) => e.kind === "outcome").map((e) => e.hintId),
+                    );
+                    const sameProposal = prev && prev.task === task && prev.trigger === trigger;
+                    const stillLive = sameProposal
+                        && (prev.holdout || (prev.shown ?? []).some((h) => !decided.has(h.hintId)));
+
+                    if (!stillLive) {
+                        propose({
+                            task,
+                            trigger,
+                            files: ctx.input.files ?? [],
+                            repository: ctx.input.repository,
+                            sessionId: ctx.sessionId,
+                            config: loadSettings().gate ?? {},
+                        });
+                    }
+                }
+                const st = currentState(ctx.sessionId);
+                return {
+                    title: "Adaptive hints",
+                    url: entry.url,
+                    status: st.holdout ? "holdout" : `${st.hints.filter((h) => !h.outcome).length} hint(s)`,
+                };
+            },
+            onClose: async (ctx) => {
+                const entry = servers.get(ctx.instanceId);
+                if (entry) {
+                    servers.delete(ctx.instanceId);
+                    for (const res of entry.clients) {
+                        try {
+                            res.end();
+                        } catch {
+                            // Already torn down.
+                        }
+                    }
+                    await new Promise((resolve) => entry.server.close(() => resolve()));
+                }
+            },
+        }),
+    ],
+    hooks: {
+        // The automatic trigger. Every submitted prompt is a candidate moment;
+        // the gate decides whether anything is actually worth surfacing, so in
+        // practice this stays quiet most of the time.
+        onUserPromptSubmitted: async (input, invocation) => {
+            try {
+                const sessionId = invocation?.sessionId;
+                const parts = [];
+
+                // Briefings from hints the user accepted since the last prompt.
+                // Delivered here so they reach the agent without ever appearing
+                // in the chat as a message the user did not write.
+                //
+                // Only these are recorded in the audit trail. The hint
+                // notification is already visible to the user as the card
+                // itself, so logging it would just bury the one message that
+                // carries content they cannot otherwise see.
+                for (const text of takeAcceptedContext(sessionId)) {
+                    parts.push(text);
+                    logInjection(sessionId, "accepted_briefing", text);
+                }
+
+                const hint = autoPropose(input?.prompt, sessionId, input?.workingDirectory);
+                if (hint) {
+                    parts.push(
+                        `[adaptive-hints] A hint is available in the "Adaptive hints" canvas panel `
+                        + `(id ${hint.hintId}, type ${hint.type}, score ${hint.finalScore.toFixed(2)}): `
+                        + `${hint.title} — ${hint.body} `
+                        + `Decide whether it is genuinely relevant to the user's request. `
+                        + `If it is, mention it in one short sentence and tell them they can Accept or Reject it in the panel. `
+                        + `Either way, record your judgment by invoking the canvas action \`record_relevance\` with `
+                        + `{ hintId: "${hint.hintId}", relevant: true|false, reason: "<short phrase>" } — `
+                        + `your decision not to show a hint is the most valuable signal this system collects, `
+                        + `and it is lost unless you record it. Do not repeat a hint the user has ignored.`,
+                    );
+                }
+
+                if (!parts.length) return;
+                broadcast();
+                return { additionalContext: parts.join("\n\n") };
+            } catch {
+                // A hint is never worth failing the user's prompt over.
+                return;
+            }
+        },
+    },
+});
