@@ -11,7 +11,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { DB_DIR } from "./generate.mjs";
+import { DB_DIR, REFERENCE_NOW } from "./generate.mjs";
 import {
     setSessionStore, generateCandidates, buildHintCandidates,
     setMinCoverage, setCoverageFocus, DEFAULT_MIN_COVERAGE, DEFAULT_COVERAGE_FOCUS,
@@ -29,7 +29,7 @@ for (const [name, file] of Object.entries(key.databases)) {
 }
 
 const quiet = { cooldownMinutes: 0, globalCooldownMinutes: 0, holdoutRate: 0, epsilon: 0 };
-const search = (task) => generateCandidates({ task, files: [] }).candidates;
+const search = (task) => generateCandidates({ task, files: [], now: REFERENCE_NOW }).candidates;
 
 function shownFor(query, sessionId, scoreThreshold) {
     return rankAndGate(buildHintCandidates(search(query), { files: [] }), {

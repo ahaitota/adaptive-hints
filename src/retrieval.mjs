@@ -265,9 +265,9 @@ function parseTs(value) {
     return Number.isFinite(ms) ? ms : 0;
 }
 
-function recencyWeight(updatedAtMs) {
+function recencyWeight(updatedAtMs, now) {
     if (!updatedAtMs) return 0.2;
-    const ageDays = (Date.now() - updatedAtMs) / 86_400_000;
+    const ageDays = (now - updatedAtMs) / 86_400_000;
     return Math.pow(0.5, Math.max(0, ageDays) / HALF_LIFE_DAYS);
 }
 
@@ -296,7 +296,7 @@ function openDb() {
  * @param {string[]} [opts.files]   Files in play now, enables the overlap signal.
  * @param {string} [opts.repository] Current repo, used as a mild affinity bonus.
  */
-export function generateCandidates({ task, excludeSessionId, files = [], repository } = {}) {
+export function generateCandidates({ task, excludeSessionId, files = [], repository, now = Date.now() } = {}) {
     if (!storeAvailable()) return { candidates: [], reason: "session_store_unavailable" };
     const terms = extractTerms(task);
     const match = terms.length ? terms.map((t) => `"${t}"`).join(" OR ") : null;
@@ -438,7 +438,7 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
             // Coverage dominates; normalized bm25 only orders equals.
             const textScore = Math.min(1, 0.75 * cov + 0.25 * (hit.strength / maxStrength));
             const fileOverlap = wanted.size ? jaccard(wanted, sessionFiles) : 0;
-            const recency = recencyWeight(parseTs(m.updated_at));
+            const recency = recencyWeight(parseTs(m.updated_at), now);
             const sameRepo = repository && m.repository === repository ? 0.08 : 0;
 
             // Size only separates candidates that already cover the question

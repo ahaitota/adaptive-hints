@@ -185,7 +185,7 @@ so the gate is deliberately aggressive:
 | Max hints shown per trigger | `1` |
 | One candidate per hint type | always |
 | Cooldown per type | `30 min` |
-| Global cooldown (any type) | `10 min` |
+| Global cooldown (any type) | `45 min` |
 | Hard suppress after N rejects in 7d | `2` |
 | Holdout (shown nothing, on purpose) | `8%` |
 | ε-greedy exploration | `10%` |

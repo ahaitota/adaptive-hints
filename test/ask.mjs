@@ -17,9 +17,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { DB_DIR } from "./generate.mjs";
+import { DB_DIR, REFERENCE_NOW } from "./generate.mjs";
 import {
-    setSessionStore, generateCandidates, buildHintCandidates, extractTerms, minCoverage,
+    setSessionStore, generateCandidates, buildHintCandidates, extractTerms, minCoverage, minRarity,
 } from "../src/retrieval.mjs";
 import { rankAndGate } from "../src/ranker.mjs";
 
@@ -109,7 +109,9 @@ function nearMisses(path, terms, limit = 5) {
 }
 
 const terms = extractTerms(question);
-const { candidates, reason, droppedLowCoverage } = generateCandidates({ task: question, files: [] });
+const { candidates, reason, droppedLowCoverage } = generateCandidates({
+    task: question, files: [], now: REFERENCE_NOW,
+});
 
 console.log(`\nQuestion   "${question}"`);
 console.log(`Database   ${dbFile}`);
@@ -117,6 +119,14 @@ console.log(`Searched   ${terms.length ? terms.join(", ") : "(nothing — every 
 console.log("=".repeat(70));
 
 if (!candidates.length) {
+    if (reason === "task_too_generic") {
+        console.log(`\nNothing searched — every word in this question is too common to`);
+        console.log(`identify a session. The rarest one appears in ${(minRarity() * 100).toFixed(0)}% or more of them.`);
+        console.log(`\nThis is the intended answer: a question of nothing but ordinary words`);
+        console.log(`carries no information about which session is wanted.\n`);
+        process.exit(0);
+    }
+
     const why = reason === "below_min_coverage"
         ? `${droppedLowCoverage} session(s) shared some words, but none reached the `
           + `${(minCoverage() * 100).toFixed(0)}% needed to count as related`

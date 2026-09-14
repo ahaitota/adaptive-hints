@@ -181,7 +181,12 @@ function sessionMarkers(r, count = 3) {
 // A fixed reference date, so rebuilding produces byte-identical databases.
 // Using Date.now() made every rebuild differ, which would make a change in
 // test results ambiguous: code change, or just a reshuffle of the data?
-const REFERENCE_NOW = Date.parse("2026-09-01T12:00:00.000Z");
+//
+// Exported because freezing the DATA is only half the job. Recency scoring uses
+// the clock, so with a fixed build date the fixtures silently aged in real time
+// and results drifted with no code change — A7's score gap fell from 0.227 to
+// 0.193 over two weeks. Tests pass this as `now` so scoring is frozen too.
+export const REFERENCE_NOW = Date.parse("2026-09-01T12:00:00.000Z");
 
 function isoDaysAgo(days) {
     return new Date(REFERENCE_NOW - days * 86_400_000).toISOString();

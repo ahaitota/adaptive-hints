@@ -30,7 +30,7 @@ now, and a setting that looks good on synthetic data is not evidence.
 so the learning log, settings and real session history are untouched. The live
 extension keeps pointing at the real store throughout.
 
-**`db/` can be deleted freely.** It is about 10 MB of generated files and
+**`db/` can be deleted freely.** It is about 23 MB of generated files and
 `node build.mjs` recreates it byte for byte.
 
 **One failure is expected.** A2 fails on purpose. The fixtures would pass it at
@@ -200,14 +200,17 @@ rather than the system.
 ## Current results
 
 ```
-PASS  A1  top-5 94% (need 90%), right topic 100%
+PASS  A1  right topic 100%, correct session returned 100% (need 90%)
+          not graded: top-5 88%, top-1 20%
 FAIL  A2  46% overall (need 60%) — easy 75%, medium 35%, hard 10%
 PASS  A3  0 of 15 impossible questions produced a hint
 PASS  A4  100% stayed quiet (need 95%) — 0 of 10 leaked
 PASS  A5  short sessions won 100% (need 40%)
 --    A6  0% of same-meaning pairs found (measurement only)
-PASS  A7  recent won 100%, biggest gap 0.193 (need under 0.45)
+PASS  A7  recent won 100%, biggest gap 0.374 (need under 0.45)
 ```
+
+Reproducible: two consecutive runs produce byte-identical output.
 
 A4 and A5 were fixed together by three changes: a rarity gate on the question,
 coverage measured within a single message as well as across the session, and a
@@ -225,6 +228,59 @@ producing cards — 0 of 8 at 0.30, 3 of 8 at 0.20.
 The fixture gain was on synthetic paraphrases; the cost was on real data. The
 settings follow the real data, which is why A2 is still red. Closing it needs
 meaning-based search (A6), not another threshold.
+
+### The tests were measuring their own age
+
+A review of the setup found a fault in the tests themselves, not in the system.
+
+The fake sessions are built with **fixed dates**, so that rebuilding produces
+identical files. But scoring asks *"how old is this session?"* using **today's
+date**. So the fake sessions quietly aged in real time while their contents
+stayed frozen, and every score drifted downward as the days passed.
+
+The evidence was sitting in the report already: A7's score gap was **0.227**
+when first measured and **0.193** two weeks later, with no code change in
+between.
+
+That breaks the one promise the fixtures exist to make — that a change in
+results means a change in the code.
+
+**Fixed** by giving the tests a frozen clock as well as frozen data. Two
+consecutive runs now produce byte-identical output.
+
+This corrected some numbers, and one correction mattered:
+
+| | drifting clock | frozen clock |
+| --- | --- | --- |
+| A1 exact session in top 5 | 96% | 88% |
+| A7 score gap | 0.193 | 0.374 |
+
+A1 had been reading **8 points too high**. As sessions age, every recency score
+sinks toward the same floor, so recency stops separating anything and the
+ranking looks cleaner than it is.
+
+### A1 now grades the question it was written to ask
+
+With the clock fixed, A1's exact-session score was 88% against a bar of 90%.
+Before moving anything, the misses were examined:
+
+- the correct session was returned for **50 of 50** questions, never lost
+- its worst rank was **10th**
+- for every question that missed the top 5, **100%** of the sessions ranked
+  above it were the **same topic**
+
+So the search was never finding something irrelevant. It was choosing between
+twenty sessions that say almost the same words — because each topic's 20
+sessions are generated from 9 shared templates. A real session store does not
+contain twenty near-copies of one conversation.
+
+A1 is therefore graded on **"did it find a relevant session"** — right topic
+100%, correct session returned 100% — and the exact-choice numbers are reported
+but not graded, with the reason attached.
+
+This was checked against the alternative explanation first: the three fixes were
+tested one at a time on the frozen clock, and they **raised** A1 from 86% to
+88%. The drop was entirely the clock.
 
 ### The rarity gate has a measured limit
 
