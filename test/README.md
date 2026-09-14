@@ -96,6 +96,7 @@ two consecutive builds produce the same file hash.)
 | `ask.mjs` | Ask the fake data a question by hand and see why it answered |
 | `check-real.mjs` | Old vs new settings on the real store, read-only |
 | `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
+| `rarity-real.mjs` | Tests whether word frequency can spot an empty question, read-only |
 | `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
 | `db/*.db` | The generated databases (rebuild rather than commit) |
 | `db/answer-key.json` | Which session each question should find |
@@ -224,6 +225,23 @@ producing cards — 0 of 8 at 0.30, 3 of 8 at 0.20.
 The fixture gain was on synthetic paraphrases; the cost was on real data. The
 settings follow the real data, which is why A2 is still red. Closing it needs
 meaning-based search (A6), not another threshold.
+
+### The rarity gate has a measured limit
+
+It blocks questions built purely from universal words — verified on the real
+store at 10 of 10 leaking before and 0 of 10 after. It does **not** block a
+natural but empty sentence such as *"can you check that part again and look at
+the changes before we start"*, which still produced an 81% match against the
+real store.
+
+Five word-frequency measures were tested as a discriminator (`rarity-real.mjs`):
+rarest word, second rarest, median, mean, and a count of distinctive words.
+**None separates real questions from empty ones** on a single-subject corpus —
+every one overlaps, because a genuine question and an empty one draw on the same
+vocabulary, and an empty sentence can still contain an unusual word.
+
+The fixtures cannot show this: with ten unrelated subjects, *sourdough* is
+distinctive and *check* is not. That gap does not exist in real data.
 
 ### A2 was circular at first, and that mattered
 

@@ -87,6 +87,14 @@ export function coverageFocus() {
 // most 10% of sessions, while a question built only from common words bottoms
 // out at 56%. Anything in that gap separates them; 40% leaves room for real
 // data, where vocabulary is narrower than in the fixtures.
+//
+// KNOWN LIMIT, measured against the real store in test/rarity-real.mjs: this
+// only catches questions built entirely from universal words. A natural but
+// empty sentence — "can you check that part again and look at the changes" —
+// passes, because one ordinary word like "changes" is enough. Five frequency
+// measures were tested as a discriminator and none separates real questions
+// from empty ones on a single-subject corpus. That gap is an artefact of the
+// fixtures having ten unrelated topics, and it does not exist in real data.
 export const DEFAULT_MIN_RARITY = 0.40;
 let minRarityValue = DEFAULT_MIN_RARITY;
 
