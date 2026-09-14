@@ -12,11 +12,19 @@ cd <project folder>/test
 
 node run-group-a.mjs    # run the tests (about a minute)
 node build.mjs          # rebuild the fake databases
+node ask.mjs "..."      # ask the fake data a question by hand
+node check-real.mjs     # compare old and new settings on the REAL store
+node tune-real.mjs      # sweep the cutoff against the REAL store
+node sweep-gates.mjs    # sweep both gates against the fake data
 ```
 
 `run-group-a.mjs` is the one you want day to day. `build.mjs` is only needed
 after changing `topics.mjs` or `generate.mjs` — or if `db/` has been deleted,
 in which case the runner says so rather than failing obscurely.
+
+`check-real.mjs` and `tune-real.mjs` open the real session store **read-only**
+and write nothing. They exist because the fixtures have been wrong three times
+now, and a setting that looks good on synthetic data is not evidence.
 
 **The tests never touch real data.** They read the fixture databases directly,
 so the learning log, settings and real session history are untouched. The live
@@ -25,9 +33,10 @@ extension keeps pointing at the real store throughout.
 **`db/` can be deleted freely.** It is about 10 MB of generated files and
 `node build.mjs` recreates it byte for byte.
 
-**Two failures are expected.** A4 and A5 fail on purpose: they reproduce real
-defects (filler words always producing a hint, long sessions winning unfairly).
-They turn green when those are fixed — that is the point of having them.
+**One failure is expected.** A2 fails on purpose. The fixtures would pass it at
+a lower coverage cutoff, but the real store showed that setting producing false
+hints with no gain in recall, so the cutoff stayed where the real data wanted
+it. Closing A2 needs meaning-based search, not tuning.
 
 ### Honest limits of this fake data
 
@@ -84,6 +93,10 @@ two consecutive builds produce the same file hash.)
 | `generate.mjs` | Session generator and database schema |
 | `build.mjs` | Builds the four databases and the answer key |
 | `run-group-a.mjs` | Runs tests A1 to A7 and prints a report |
+| `ask.mjs` | Ask the fake data a question by hand and see why it answered |
+| `check-real.mjs` | Old vs new settings on the real store, read-only |
+| `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
+| `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
 | `db/*.db` | The generated databases (rebuild rather than commit) |
 | `db/answer-key.json` | Which session each question should find |
 
@@ -186,14 +199,31 @@ rather than the system.
 ## Current results
 
 ```
-PASS  A1  top-5 96% (need 90%), right topic 100%
-FAIL  A2  42% overall (need 60%) — easy 75%, medium 30%, hard 0%
+PASS  A1  top-5 94% (need 90%), right topic 100%
+FAIL  A2  46% overall (need 60%) — easy 75%, medium 35%, hard 10%
 PASS  A3  0 of 15 impossible questions produced a hint
-FAIL  A4  0% stayed quiet (need 95%) — 10 of 10 leaked
-FAIL  A5  short sessions won 10% (need 40%)
+PASS  A4  100% stayed quiet (need 95%) — 0 of 10 leaked
+PASS  A5  short sessions won 100% (need 40%)
 --    A6  0% of same-meaning pairs found (measurement only)
-PASS  A7  recent won 100%, biggest gap 0.255 (need under 0.45)
+PASS  A7  recent won 100%, biggest gap 0.193 (need under 0.45)
 ```
+
+A4 and A5 were fixed together by three changes: a rarity gate on the question,
+coverage measured within a single message as well as across the session, and a
+size penalty that only separates candidates already covering the question
+equally. A2 remains the open problem and is not a tuning problem — see below.
+
+### Tuning on fixtures alone was wrong, and real data caught it
+
+The fixtures argued for dropping the coverage cutoff to 0.20, which took A2
+from 42% to 76%. A read-only check against the real session store
+(`tune-real.mjs`) showed the opposite: recall on real sentences is flat at every
+setting because genuine matches land above 90%, while off-topic questions began
+producing cards — 0 of 8 at 0.30, 3 of 8 at 0.20.
+
+The fixture gain was on synthetic paraphrases; the cost was on real data. The
+settings follow the real data, which is why A2 is still red. Closing it needs
+meaning-based search (A6), not another threshold.
 
 ### A2 was circular at first, and that mattered
 

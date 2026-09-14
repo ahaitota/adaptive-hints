@@ -31,7 +31,116 @@ const HALF_LIFE_DAYS = 14;
 
 // A candidate must share at least this fraction of the query's terms. Guards
 // against a single incidental rare word producing a confident-looking hint.
-const MIN_COVERAGE = 0.34;
+//
+// 0.30 rather than the 0.34 it was, or the 0.20 the fixtures argued for.
+// The fixtures showed a large gain from 0.20 (A2 42% -> 76%), but a read-only
+// check against the real session store showed the opposite: recall on real
+// sentences is flat at every setting because genuine matches land above 90%,
+// while off-topic questions started producing cards (0 of 8 at 0.30, 3 of 8 at
+// 0.20). The fixture gain is on synthetic paraphrases; the cost is on real
+// data, so the real data wins. See test/tune-real.mjs.
+//
+// Adjustable only so the threshold can be swept and measured offline. Nothing
+// in the extension calls setMinCoverage(), so live behaviour is exactly
+// DEFAULT_MIN_COVERAGE.
+export const DEFAULT_MIN_COVERAGE = 0.30;
+let minCoverageValue = DEFAULT_MIN_COVERAGE;
+
+export function setMinCoverage(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+        throw new RangeError(`minCoverage must be between 0 and 1, got ${value}`);
+    }
+    minCoverageValue = n;
+}
+
+export function minCoverage() {
+    return minCoverageValue;
+}
+
+// How much of the coverage score comes from terms found together in ONE
+// message, versus terms found anywhere in the session.
+//
+//   0 = anywhere in the session (the original behaviour)
+//   1 = a single message must carry the whole question
+//
+// Set from measurement, not taste — see test/sweep-coverage.mjs.
+export const DEFAULT_COVERAGE_FOCUS = 0.5;
+let coverageFocusValue = DEFAULT_COVERAGE_FOCUS;
+
+export function setCoverageFocus(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+        throw new RangeError(`coverageFocus must be between 0 and 1, got ${value}`);
+    }
+    coverageFocusValue = n;
+}
+
+export function coverageFocus() {
+    return coverageFocusValue;
+}
+
+// A question must contain at least one word that is not near-universal, or it
+// carries no information about which session is wanted.
+//
+// Measured on the fixtures: the rarest word of a genuine question appears in at
+// most 10% of sessions, while a question built only from common words bottoms
+// out at 56%. Anything in that gap separates them; 40% leaves room for real
+// data, where vocabulary is narrower than in the fixtures.
+export const DEFAULT_MIN_RARITY = 0.40;
+let minRarityValue = DEFAULT_MIN_RARITY;
+
+export function setMinRarity(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+        throw new RangeError(`minRarity must be between 0 and 1, got ${value}`);
+    }
+    minRarityValue = n;
+}
+
+export function minRarity() {
+    return minRarityValue;
+}
+
+// How hard to penalise a session for being much larger than its competitors.
+//
+// Two sessions can cover a question equally well while one is a focused note
+// and the other a 160-message thread that happens to contain the same sentence.
+// Coverage cannot separate them — both reach 100% — so size breaks the tie.
+// Applied relative to the median candidate, so it only fires on real outliers
+// and never penalises a whole result set uniformly.
+export const DEFAULT_SIZE_PENALTY = 0.20;
+let sizePenaltyValue = DEFAULT_SIZE_PENALTY;
+
+export function setSizePenalty(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+        throw new RangeError(`sizePenalty must be between 0 and 1, got ${value}`);
+    }
+    sizePenaltyValue = n;
+}
+
+export function sizePenalty() {
+    return sizePenaltyValue;
+}
+
+// Require the question's single most distinctive word to actually be matched.
+//
+// Coverage is a ratio, so a question can reach the cutoff on its supporting
+// words while the one word that identifies the subject is missing entirely:
+// "what paperwork is needed to adopt a rescue greyhound" matched
+// [paperwork, adopt, rescue] against a software session and reported 29%,
+// with "greyhound" — the only word that meant anything — absent.
+export const DEFAULT_REQUIRE_KEY_TERM = true;
+let requireKeyTermValue = DEFAULT_REQUIRE_KEY_TERM;
+
+export function setRequireKeyTerm(value) {
+    requireKeyTermValue = Boolean(value);
+}
+
+export function requireKeyTerm() {
+    return requireKeyTermValue;
+}
 
 const STOPWORDS = new Set([
     "the", "and", "for", "you", "your", "with", "this", "that", "from", "have", "has", "was", "were",
@@ -85,6 +194,19 @@ export function toFtsQuery(text, maxTerms = 12) {
  * equally lets filler carry the score. Measured case: a query for
  * "fts / dense / retrieval / bm25" scored 67% while every topic-defining term
  * missed — the matches were "use", "show", "exactly", "these".
+ *
+ * Two coverages are returned per session:
+ *
+ *   spread  — the terms found anywhere in the session, in any combination of
+ *             messages. This is what the session-level union gives, and it is
+ *             what a very long session exploits: a 320-message thread contains
+ *             every common word somewhere, so it reports 100% for a question
+ *             it has nothing to do with.
+ *   focused — the terms found together in a single indexed message. A session
+ *             that genuinely discussed the subject says most of it in one
+ *             place; a long session that merely accumulated the words does not.
+ *
+ * The index stores one row per message, so this costs no extra queries.
  */
 function termCoverage(db, terms, excludeSessionId) {
     const totalSessions = db
@@ -92,23 +214,39 @@ function termCoverage(db, terms, excludeSessionId) {
         .get().n || 1;
 
     const bySession = new Map();
+    const byChunk = new Map();
     const idf = new Map();
+    const dfRatio = new Map();
 
     for (const term of terms) {
         const rows = db
-            .prepare(`SELECT DISTINCT session_id FROM search_index WHERE search_index MATCH ?`)
+            .prepare(`SELECT rowid AS chunk, session_id FROM search_index WHERE search_index MATCH ?`)
             .all(`"${term}"`);
-        // Document frequency at session granularity, which is the unit we rank.
-        const df = rows.length;
+        // Document frequency stays at session granularity, which is the unit we
+        // rank: a word repeated 50 times in one thread is not a common word.
+        const sessions = new Set(rows.map((r) => r.session_id));
+        const df = sessions.size;
         idf.set(term, Math.log(1 + (totalSessions - df + 0.5) / (df + 0.5)));
+        dfRatio.set(term, df / totalSessions);
 
         for (const r of rows) {
             if (excludeSessionId && r.session_id === excludeSessionId) continue;
             if (!bySession.has(r.session_id)) bySession.set(r.session_id, new Set());
             bySession.get(r.session_id).add(term);
+            if (!byChunk.has(r.chunk)) byChunk.set(r.chunk, { sessionId: r.session_id, terms: new Set() });
+            byChunk.get(r.chunk).terms.add(term);
         }
     }
-    return { bySession, idf };
+
+    // The single best message per session, by the same IDF weighting.
+    const bestChunk = new Map();
+    for (const { sessionId, terms: found } of byChunk.values()) {
+        const weight = [...found].reduce((s, t) => s + (idf.get(t) ?? 0), 0);
+        const prev = bestChunk.get(sessionId);
+        if (!prev || weight > prev.weight) bestChunk.set(sessionId, { weight, terms: found });
+    }
+
+    return { bySession, bestChunk, idf, dfRatio, totalSessions };
 }
 
 function parseTs(value) {
@@ -168,8 +306,25 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
             )
             .all(match);
 
-        const { bySession: coverage, idf } = termCoverage(db, terms, excludeSessionId);
+        const { bySession: coverage, bestChunk, idf, dfRatio } = termCoverage(db, terms, excludeSessionId);
         const totalWeight = terms.reduce((s, t) => s + (idf.get(t) ?? 0), 0);
+
+        // A question of nothing but near-universal words cannot identify a
+        // session. Without this, a long enough session contains all of them and
+        // reports a confident "100% match" for a question about nothing.
+        const rarest = Math.min(...terms.map((t) => dfRatio.get(t) ?? 0));
+        if (rarest >= minRarityValue) {
+            return { candidates: [], reason: "task_too_generic" };
+        }
+
+        // The word carrying the most information about what is being asked.
+        // A candidate that misses it is matching the scaffolding of the
+        // question rather than its subject.
+        let keyTerm = null, keyWeight = -1;
+        for (const t of terms) {
+            const w = idf.get(t) ?? 0;
+            if (w > keyWeight) { keyWeight = w; keyTerm = t; }
+        }
 
         // bm25 is kept only as a tie-breaker within the result set; coverage
         // is what decides whether a candidate is related at all.
@@ -203,6 +358,21 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
             .all(...ids);
         const meta = new Map(metaRows.map((m) => [m.id, m]));
 
+        // Session size, used only to break ties between candidates that cover
+        // the question equally well. Measured in indexed messages rather than
+        // characters so one enormous message does not count as a long thread.
+        const sizeRows = db
+            .prepare(
+                `SELECT session_id, COUNT(*) AS chunks FROM search_index
+                 WHERE session_id IN (${placeholders}) GROUP BY session_id`,
+            )
+            .all(...ids);
+        const chunksBySession = new Map(sizeRows.map((s) => [s.session_id, s.chunks]));
+        const sortedSizes = [...chunksBySession.values()].sort((a, b) => a - b);
+        const medianChunks = sortedSizes.length
+            ? sortedSizes[Math.floor(sortedSizes.length / 2)] || 1
+            : 1;
+
         const fileRows = db
             .prepare(`SELECT session_id, file_path FROM session_files WHERE session_id IN (${placeholders})`)
             .all(...ids);
@@ -231,10 +401,26 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
             // Weight by IDF so topic-defining words dominate and filler cannot
             // carry a candidate over the threshold on its own.
             const matchedWeight = [...matchedSet].reduce((s, t) => s + (idf.get(t) ?? 0), 0);
-            const cov = totalWeight > 0 ? matchedWeight / totalWeight : 0;
+            const spreadCov = totalWeight > 0 ? matchedWeight / totalWeight : 0;
+            // A very long session accumulates the words of every question
+            // without ever discussing any of them. Requiring part of the match
+            // to land in one message is what separates "this was discussed" from
+            // "these words occur somewhere in 320 messages".
+            const focusedWeight = bestChunk.get(sessionId)?.weight ?? 0;
+            const focusedCov = totalWeight > 0 ? focusedWeight / totalWeight : 0;
+            const cov = coverageFocusValue * focusedCov + (1 - coverageFocusValue) * spreadCov;
 
             // A candidate sharing one incidental rare word is not related.
-            if (cov < MIN_COVERAGE) {
+            if (cov < minCoverageValue) {
+                droppedLowCoverage++;
+                continue;
+            }
+
+            // ...and a candidate missing the question's key word is matching
+            // its scaffolding. Skipped when the key word appears nowhere in the
+            // store, since then no candidate could ever have it.
+            if (requireKeyTermValue && keyTerm && !matchedSet.has(keyTerm)
+                && (dfRatio.get(keyTerm) ?? 0) > 0) {
                 droppedLowCoverage++;
                 continue;
             }
@@ -247,13 +433,22 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
             const recency = recencyWeight(parseTs(m.updated_at));
             const sameRepo = repository && m.repository === repository ? 0.08 : 0;
 
+            // Size only separates candidates that already cover the question
+            // equally well. Relative to the median candidate and capped at one
+            // order of magnitude, so an ordinary session is untouched and only a
+            // genuine outlier — the 160-message thread — gives ground to a
+            // focused note that says the same thing.
+            const chunks = chunksBySession.get(sessionId) || 1;
+            const oversize = Math.min(1, Math.max(0, Math.log10(chunks / medianChunks)));
+            const sizeFactor = 1 - sizePenaltyValue * oversize;
+
             // When no current files are known the overlap term carries no
             // information, so its weight is folded back into text rather than
             // silently penalising every candidate.
             const base = wanted.size ? 0.65 * textScore + 0.35 * fileOverlap : textScore;
             // Recency modulates rather than dominates: a strong old match still
             // beats a weak fresh one.
-            const retrievalScore = Math.min(1, (base * (0.55 + 0.45 * recency)) + sameRepo);
+            const retrievalScore = Math.min(1, (base * sizeFactor * (0.55 + 0.45 * recency)) + sameRepo);
 
             candidates.push({
                 sessionId,

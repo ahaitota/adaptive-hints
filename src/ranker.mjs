@@ -9,7 +9,15 @@ import { acceptanceRate, computeCounters, recentRejections, lastShownAt } from "
 
 export const DEFAULT_CONFIG = {
     // Gate
-    scoreThreshold: 0.35,
+    //
+    // 0.30 rather than the 0.35 it was. Coverage and this threshold are two
+    // locks on the same door: raising retrieval quality did nothing on screen
+    // because candidates rescued by the first lock were stopped by the second.
+    // Swept jointly in test/sweep-gates.mjs and then checked against the real
+    // session store in test/tune-real.mjs, which is what ruled out the lower
+    // values the fixtures preferred — at 0.25 an off-topic question started
+    // producing a card.
+    scoreThreshold: 0.30,
     maxVisible: 1, // one hint per trigger point; a queue invites ignoring
     cooldownMinutes: 30, // per hint type
     // Per-type cooldown alone lets one hint of each type fire on consecutive

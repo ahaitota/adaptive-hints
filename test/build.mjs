@@ -16,6 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 import { join, basename } from "node:path";
 import { TOPICS, FILLER, renderTemplate } from "./topics.mjs";
 import { A2_QUESTIONS } from "./questions-a2.mjs";
+import { extractTerms, minCoverage } from "../src/retrieval.mjs";
 import {
     DB_DIR, buildBackground, insertSession, openFresh, rng, message, isoDaysAgo,
 } from "./generate.mjs";
@@ -24,6 +25,70 @@ const BACKGROUND = 200;
 
 function write(db, sessions, opts) {
     for (const s of sessions) insertSession(db, s, opts);
+}
+
+/**
+ * Refuse to build a fixture in which the "impossible" questions are answerable.
+ *
+ * A3 only means something if the background genuinely cannot answer these
+ * questions. The question list and the background topics live in separate
+ * files with nothing connecting them, so adding a topic — cooking, say — can
+ * quietly make "what temperature should I roast a leg of lamb at" a legitimate
+ * match. A3 would then report a leak for behaviour that is actually correct,
+ * and the failure would look like a ranking bug.
+ *
+ * This recomputes the same IDF-weighted coverage the live gate applies in
+ * retrieval.mjs and fails the build, loudly and early, rather than letting a
+ * contaminated fixture produce a misleading test result. The A2 fixture taught
+ * this lesson the expensive way: questions drawn from the session templates
+ * scored 100% while proving nothing.
+ */
+function assertImpossible(db, questions) {
+    const totalSessions = db
+        .prepare(`SELECT COUNT(DISTINCT session_id) AS n FROM search_index`).get().n || 1;
+    const matchSessions = db.prepare(
+        `SELECT DISTINCT session_id FROM search_index WHERE search_index MATCH ?`);
+
+    const offenders = [];
+    for (const q of questions) {
+        const bySession = new Map();
+        const idf = new Map();
+        let totalWeight = 0;
+
+        for (const term of extractTerms(q)) {
+            const rows = matchSessions.all(`"${term}"`);
+            const weight = Math.log(1 + (totalSessions - rows.length + 0.5) / (rows.length + 0.5));
+            idf.set(term, weight);
+            totalWeight += weight;
+            for (const r of rows) {
+                if (!bySession.has(r.session_id)) bySession.set(r.session_id, new Set());
+                bySession.get(r.session_id).add(term);
+            }
+        }
+
+        let worst = 0, worstId = null, worstTerms = [];
+        for (const [sessionId, matched] of bySession) {
+            const cov = totalWeight > 0
+                ? [...matched].reduce((sum, t) => sum + idf.get(t), 0) / totalWeight
+                : 0;
+            if (cov > worst) { worst = cov; worstId = sessionId; worstTerms = [...matched]; }
+        }
+        if (worst >= minCoverage()) {
+            offenders.push(`  "${q}"\n      ${(worst * 100).toFixed(0)}% coverage from `
+                + `${worstId} via [${worstTerms.join(", ")}]`);
+        }
+    }
+
+    if (offenders.length) {
+        throw new Error(
+            `A3 fixture is contaminated: ${offenders.length} of ${questions.length} `
+            + `"impossible" question(s) can now be answered by the background data, at or `
+            + `above the ${(minCoverage() * 100).toFixed(0)}% coverage the live gate needs.\n`
+            + `${offenders.join("\n")}\n\n`
+            + `A3 would report these as leaks even though showing a hint would be correct.\n`
+            + `Fix by replacing the affected questions in build.mjs, or by removing the\n`
+            + `background topic that now covers them.`);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,9 +125,9 @@ function buildCore() {
         difficulty,
     }));
 
-    // A3: questions the background cannot answer. Every word here is checked
-    // below to be absent from the fixture — the guard the sourdough incident
-    // taught us to build.
+    // A3: questions the background cannot answer. The list is hand-written, so
+    // assertImpossible() below checks it against the data actually generated —
+    // the guard the sourdough incident taught us to build.
     const impossible = [
         "how do I renew my passport before travelling abroad",
         "what temperature should I roast a leg of lamb at",
@@ -80,6 +145,8 @@ function buildCore() {
         "how do I apply for a fishing licence",
         "what is involved in servicing a gas boiler",
     ];
+
+    assertImpossible(db, impossible);
 
     // A4: questions built ONLY from words that are genuinely common IN THIS
     // DATABASE. Deriving them rather than using a fixed list matters: "common"

@@ -137,14 +137,38 @@ Global off switch: `configure` with `{ "autoPropose": false }`.
    by IDF cut that query from 12 surviving candidates to 3, while leaving a
    genuinely good query at 100%.
 
-   Candidates below `MIN_COVERAGE` (0.34) are dropped outright.
+   Candidates below `MIN_COVERAGE` (0.30) are dropped outright.
+
+   Coverage is measured **twice** and blended 50/50: once over the whole
+   session, once over the single best message in it. The session-wide figure is
+   what a very long thread exploits — 490 messages contain every common word
+   somewhere, so it reports 100% for a question it has nothing to do with. The
+   single-message figure asks whether the subject was ever actually discussed
+   in one place.
+
+   Two further rules apply before a candidate survives:
+
+   - **Rarity gate.** If the rarest word in the *question* appears in 40% or
+     more of all sessions, nothing is returned at all (`task_too_generic`).
+     A question of nothing but near-universal words cannot identify a session.
+     Measured: genuine questions have a word in ≤10% of sessions, filler-only
+     questions bottom out at 56%.
+   - **Key term.** The highest-IDF word of the question must be among the
+     matched terms, unless it appears nowhere in the store. Coverage is a ratio,
+     so a candidate can clear the cutoff on supporting words while the one word
+     that carries the subject is missing.
 2. **Files** — combined as `0.65 × text + 0.35 × fileOverlap` when files are
    known; otherwise text carries the full weight (the overlap term carries no
    information then, so folding it back is more honest than penalising
    everything).
-3. **Recency** — multiplies by `0.55 + 0.45 × 2^(-ageDays/14)`. Modulates, never
+3. **Size** — multiplies by `1 − 0.20 × min(1, log10(chunks / median chunks))`.
+   Only separates candidates that already cover the question equally well: a
+   focused note and a 160-message thread containing the same sentence both
+   reach 100% coverage, and without this the longer one wins on BM25 tie-break
+   every time.
+4. **Recency** — multiplies by `0.55 + 0.45 × 2^(-ageDays/14)`. Modulates, never
    dominates: a strong old match still beats a weak fresh one.
-4. **Personalization** — multiplies by `0.5 + acceptanceRate`, the Beta(1,1)
+5. **Personalization** — multiplies by `0.5 + acceptanceRate`, the Beta(1,1)
    posterior mean for that `(hint type, trigger point)`.
    - never seen → 0.5 → **×1.00** (no effect; cold start is neutral)
    - always rejected → →0 → **×0.50**
@@ -157,7 +181,7 @@ so the gate is deliberately aggressive:
 
 | Rule | Default |
 | --- | --- |
-| Minimum final score | `0.35` |
+| Minimum final score | `0.30` |
 | Max hints shown per trigger | `1` |
 | One candidate per hint type | always |
 | Cooldown per type | `30 min` |
