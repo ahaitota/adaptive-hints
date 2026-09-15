@@ -98,6 +98,7 @@ two consecutive builds produce the same file hash.)
 | `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
 | `rarity-real.mjs` | Tests whether word frequency can spot an empty question, read-only |
 | `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
+| `sweep-bm25.mjs` | Picks the BM25 saturation constant by measurement |
 | `db/*.db` | The generated databases (rebuild rather than commit) |
 | `db/answer-key.json` | Which session each question should find |
 

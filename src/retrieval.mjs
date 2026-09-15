@@ -132,6 +132,30 @@ export function sizePenalty() {
     return sizePenaltyValue;
 }
 
+// BM25 has no upper bound, so it must be squashed into 0..1 before it can be
+// mixed with coverage. It used to be divided by the largest value in the same
+// result set, which destroyed the only thing it knew: HOW strong the match was.
+// Measured on the fixtures — a real sentence's best hit scores about 32.9, an
+// unanswerable question's best hit about 5.4, and dividing by the result-set
+// maximum turned both into exactly 1.0.
+//
+// s / (s + k) squashes any score without looking at the other results, so a
+// weak best-of-a-bad-bunch stays weak. k is the score that maps to 0.5.
+export const DEFAULT_BM25_SATURATION = 8;
+let bm25SaturationValue = DEFAULT_BM25_SATURATION;
+
+export function setBm25Saturation(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) {
+        throw new RangeError(`bm25Saturation must be greater than 0, got ${value}`);
+    }
+    bm25SaturationValue = n;
+}
+
+export function bm25Saturation() {
+    return bm25SaturationValue;
+}
+
 // Require the question's single most distinctive word to actually be matched.
 //
 // Coverage is a ratio, so a question can reach the cutoff on its supporting
@@ -352,8 +376,6 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
         }
         if (!bySession.size) return { candidates: [], reason: "no_text_match" };
 
-        const maxStrength = Math.max(...[...bySession.values()].map((v) => v.strength)) || 1;
-
         const wanted = new Set(files.map(normalizePath));
         const ids = [...bySession.keys()];
         const placeholders = ids.map(() => "?").join(",");
@@ -435,8 +457,13 @@ export function generateCandidates({ task, excludeSessionId, files = [], reposit
 
             const m = meta.get(sessionId) || {};
             const sessionFiles = filesBySession.get(sessionId) || new Set();
-            // Coverage dominates; normalized bm25 only orders equals.
-            const textScore = Math.min(1, 0.75 * cov + 0.25 * (hit.strength / maxStrength));
+            // Coverage dominates; bm25 only orders equals. Saturated rather
+            // than scaled to the result-set maximum, so "best of a weak field"
+            // stays weak instead of being promoted to a perfect 1.0.
+            const bm25Score = hit.strength > 0
+                ? hit.strength / (hit.strength + bm25SaturationValue)
+                : 0;
+            const textScore = Math.min(1, 0.75 * cov + 0.25 * bm25Score);
             const fileOverlap = wanted.size ? jaccard(wanted, sessionFiles) : 0;
             const recency = recencyWeight(parseTs(m.updated_at), now);
             const sameRepo = repository && m.repository === repository ? 0.08 : 0;

@@ -127,8 +127,21 @@ Global off switch: `configure` with `{ "autoPropose": false }`.
    It deliberately dominates, because raw BM25 magnitude is *not* an absolute
    relevance measure — it rewards rare terms, so a nonsense query containing
    one unusual word can outscore a genuinely related one (measured: a gibberish
-   query scored 4.89 vs 1.72 for a good one). Normalizing BM25 by the maximum
-   in the result set makes the top hit ~1.0 no matter how weak it is.
+   query scored 4.89 vs 1.72 for a good one).
+
+   **normalizedBM25 is `s / (s + 8)`**, a saturating curve. It used to be
+   `s / max(s in this result set)`, which threw away the only thing BM25 knew:
+   how strong the match was. Measured on the fixtures — a real sentence's best
+   hit scores about **32.9** and an unanswerable question's best hit about
+   **5.4**, and dividing by the result-set maximum turned **both into exactly
+   1.0**. Saturation maps them to 0.80 and 0.40 instead, without looking at the
+   other results, so "best of a weak field" stays weak.
+
+   `8` is the score that maps to 0.5, swept in `test/sweep-bm25.mjs`. Every
+   value from 2 to 24 keeps all tests green, and 8 sits mid-range rather than at
+   an edge. Be honest about the size of this: coverage carries 0.75 of the
+   weight and the cutoff does most of the filtering, so on real data this
+   changed recall not at all and false hits by at most one.
 
    Coverage is **IDF-weighted rather than a plain count** because counting
    terms equally lets filler carry the score. Measured case: a query about
