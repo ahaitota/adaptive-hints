@@ -330,19 +330,29 @@ levels are `info`, `warning`, `error` only; passing `debug` throws
 
 ## Panel
 
-The panel has two halves. Below the hint card sits **Learned preferences** —
-every rule with its stage, the sessions behind it, and your own words as
-evidence. Rules that are asking show the question with *Yes, please* and *Not
-this time*, and how many more yeses before they stop asking. Turned-off rules
-stay listed with a *restore* button.
+The panel shows **one learned preference at a time**, in a card, with a pager
+to walk through them. They are ordered by what needs you most: waiting for an
+answer, then still gathering evidence, then already running silently, then
+turned off.
 
-It used to end with a **Learning signal** table of accept rate, engagement and
-gate pass rate. Those counters describe hint types rather than preferences, so
-the table was removed; `summarize()` still computes them and the `stats` action
-still returns them for anyone reading offline.
+Each card leads with the question, shows the instruction underneath, quotes
+your own words as evidence, and says which stage it is in — *waiting for your
+answer · 2/5 accepted*, *seen in 2 of 3 sessions*, *applied without asking*.
+Accept, reject, merge, turn off and restore all live on the card.
 
-The card shows the hint; **"Why this?"** expands the full derivation, grouped
-to show the chain rather than a flat list:
+Two things used to sit here and no longer do. A **retrieval hint card** with a
+"Why this?" score breakdown occupied this slot, which was the wrong way round —
+the preferences are the thing that needs a decision. And a **Learning signal**
+table reported accept rate, engagement and gate pass rate for hint types;
+`summarize()` still computes those and the `stats` action still returns them,
+for anyone reading offline.
+
+Retrieval still runs and is still logged, but it has no card. The agent is told
+about a relevant prior session and may mention it in passing; there is nothing
+to click.
+
+The removed breakdown grouped the score to show the chain rather than a flat
+list, which is worth keeping in mind if it is ever rebuilt:
 
 ```
 INGREDIENTS → RETRIEVAL SCORE
@@ -358,10 +368,11 @@ LEARNING → MULTIPLIER
   = final score        retrieval × multiplier
 ```
 
-The earlier flat layout listed coverage, overlap and recency as if they were
+An earlier flat layout listed coverage, overlap and recency as if they were
 peers of the retrieval score, which made it look like four independent factors
 multiplied at the end. They are not: they are the inputs that *produce* the
-retrieval score, and only the personal multiplier is applied on top.
+retrieval score, and only the personal multiplier is applied on top. The
+`explain` action still returns all of it.
 
 ## Configuring
 

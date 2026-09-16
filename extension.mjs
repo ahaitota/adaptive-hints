@@ -779,10 +779,13 @@ session = await joinSession({
                     }
                 }
                 const st = currentState(ctx.sessionId);
+                const waiting = (st.rules?.active ?? []).length;
+                const total = (st.rules?.active ?? []).length + (st.rules?.candidates ?? []).length
+                    + (st.rules?.trusted ?? []).length;
                 return {
                     title: "Adaptive hints",
                     url: entry.url,
-                    status: st.holdout ? "holdout" : `${st.hints.filter((h) => !h.outcome).length} hint(s)`,
+                    status: waiting ? `${waiting} waiting` : `${total} preference(s)`,
                 };
             },
             onClose: async (ctx) => {
@@ -884,16 +887,18 @@ session = await joinSession({
 
                 const hint = autoPropose(input?.prompt, sessionId, input?.workingDirectory);
                 if (hint) {
+                    // The panel no longer renders a hint card — that slot now
+                    // belongs to learned preferences — so this must not tell the
+                    // user to accept something they cannot see. The proposal is
+                    // still made and still logged, which keeps the retrieval
+                    // measurements alive without putting a dead affordance in
+                    // front of anyone.
                     parts.push(
-                        `[adaptive-hints] A hint is available in the "Adaptive hints" canvas panel `
-                        + `(id ${hint.hintId}, type ${hint.type}, score ${hint.finalScore.toFixed(2)}): `
-                        + `${hint.title} — ${hint.body} `
-                        + `Decide whether it is genuinely relevant to the user's request. `
-                        + `If it is, mention it in one short sentence and tell them they can Accept or Reject it in the panel. `
-                        + `Either way, record your judgment by invoking the canvas action \`record_relevance\` with `
-                        + `{ hintId: "${hint.hintId}", relevant: true|false, reason: "<short phrase>" } — `
-                        + `your decision not to show a hint is the most valuable signal this system collects, `
-                        + `and it is lost unless you record it. Do not repeat a hint the user has ignored.`,
+                        `[adaptive-hints] A prior session may be relevant (${hint.type}, `
+                        + `score ${hint.finalScore.toFixed(2)}): ${hint.body} `
+                        + `There is no card for this — mention it only if it genuinely helps the user's `
+                        + `request, and record your judgment with the canvas action \`record_relevance\`: `
+                        + `{ hintId: "${hint.hintId}", relevant: true|false, reason: "<short phrase>" }.`,
                     );
                 }
 
