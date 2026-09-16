@@ -149,10 +149,6 @@ export function renderHtml() {
     <div id="sentlist"></div>
   </details>
 </div>
-<div class="rules">
-  <div class="sub" style="margin-bottom:6px">Learned preferences</div>
-  <div id="ruleslist"></div>
-</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -189,96 +185,6 @@ function renderSent() {
     </details>\`).join("");
 }
 
-function renderRules() {
-  const rules = state.rules || { trusted: [], active: [], candidates: [], retired: [] };
-  const all = [...(rules.trusted || []), ...rules.active, ...rules.candidates];
-  const gone = rules.retired || [];
-  if (!all.length && !gone.length) {
-    $("ruleslist").innerHTML =
-      '<div class="done">Nothing learned yet. A preference becomes active once three '
-      + 'different sessions have stated it, then applies silently after five accepts.</div>';
-    return;
-  }
-  // Merge needs a target, so the select lists every OTHER rule.
-  const options = (id) => all.filter(r => r.id !== id)
-    .map(r => \`<option value="\${r.id}">\${esc(r.rule.slice(0, 34))}</option>\`).join("");
-
-  // Three stages, and the pill says which: still gathering evidence, asking
-  // each time, or trusted enough to act without asking.
-  const badge = (r) => {
-    if (r.status === "trusted") return '<span class="pill on">silent</span>';
-    if (r.status === "active") return \`<span class="pill asking">asking \${r.streak || 0}/5</span>\`;
-    return \`<span class="pill">\${r.sessions}/3 sessions</span>\`;
-  };
-
-  $("ruleslist").innerHTML = all.map(r => \`
-    <div class="card rulecard" data-id="\${r.id}">
-      <div class="card-head">
-        <div class="title">\${esc(r.ask || r.rule)}</div>
-        \${badge(r)}
-      </div>
-      <div class="body">
-        \${r.ask ? \`as a rule: \${esc(r.rule)}<br>\` : ""}
-        when: \${esc(r.when)} · scope: \${esc(r.scope)} ·
-        \${r.sessions} session\${r.sessions === 1 ? "" : "s"}\${r.accepts ? \` · \${r.accepts} accepted\` : ""}\${r.rejects ? \`, \${r.rejects} rejected\` : ""}
-        \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
-      </div>
-      <div class="actions">
-        \${r.status === "active" ? \`
-          <button class="primary" data-act="accept" data-id="\${r.id}">Yes, please</button>
-          <button data-act="reject" data-id="\${r.id}">Not this time</button>
-          <span class="hint">\${5 - (r.streak || 0)} more to stop asking</span>\` : ""}
-        \${r.status === "trusted" ? '<span class="hint">Applied without asking.</span>' : ""}
-        \${r.status === "candidate" ? \`<span class="hint">Needs \${3 - r.sessions} more session\${3 - r.sessions === 1 ? "" : "s"} before it is offered.</span>\` : ""}
-        <div class="spacer"></div>
-        \${all.length > 1 ? \`<select data-merge="\${r.id}">
-          <option value="">merge into…</option>\${options(r.id)}
-        </select>\` : ""}
-        <button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>
-      </div>
-    </div>\`).join("")
-  // Turned-off rules are kept and shown, not deleted: the evidence behind them
-  // is real conversation, and a mis-click should be recoverable.
-  + gone.map(r => \`
-    <div class="card rulecard off" data-id="\${r.id}">
-      <div class="card-head">
-        <div class="title">\${esc(r.ask || r.rule)}</div>
-        <span class="pill">off</span>
-      </div>
-      <div class="body">\${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept</div>
-      <div class="actions">
-        <div class="spacer"></div>
-        <button data-act="restore" data-id="\${r.id}">Restore</button>
-      </div>
-    </div>\`).join("");
-
-  const post = async (body) => {
-    await fetch("/rules", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    load();
-  };
-  $("ruleslist").querySelectorAll('button[data-act="retire"]').forEach(b => {
-    b.onclick = () => { b.disabled = true; post({ retire: b.dataset.id }); };
-  });
-  $("ruleslist").querySelectorAll('button[data-act="restore"]').forEach(b => {
-    b.onclick = () => { b.disabled = true; post({ restore: b.dataset.id }); };
-  });
-  $("ruleslist").querySelectorAll('button[data-act="accept"], button[data-act="reject"]').forEach(b => {
-    b.onclick = () => {
-      b.disabled = true;
-      post({ outcome: { id: b.dataset.id, outcome: b.dataset.act === "accept" ? "accepted" : "rejected" } });
-    };
-  });
-  $("ruleslist").querySelectorAll("select[data-merge]").forEach(s => {
-    s.onchange = () => {
-      if (!s.value) return;
-      // The chosen rule is kept; this one folds into it, evidence and all.
-      post({ merge: { keep: s.value, remove: s.dataset.merge } });
-    };
-  });
-}
 
 function render() {
   // The 4s poll re-renders, which would slam every <details> shut and lose
@@ -310,95 +216,105 @@ function render() {
 }
 
 function renderInner() {
-  const undecided = state.hints.filter(h => !h.outcome);
-  $("ctx").innerHTML = (state.task
-    ? \`Task: "\${state.task}"  ·  trigger: \${state.trigger}\`
-    : "No proposal yet. Ask the agent to propose hints.")
+  const rules = state.rules || { trusted: [], active: [], candidates: [], retired: [] };
+  // One deck, in the order that matters: things waiting on a decision first,
+  // then things still gathering evidence, then what is already running, then
+  // what was turned off. The pager walks all of them.
+  const deck = [
+    ...rules.active,
+    ...rules.candidates,
+    ...(rules.trusted || []),
+    ...(rules.retired || []),
+  ];
+  const waiting = rules.active.length;
+
+  $("ctx").innerHTML = (deck.length
+    ? \`\${waiting ? \`\${waiting} waiting for you\` : "Nothing waiting"} · \${deck.length} learned preference\${deck.length === 1 ? "" : "s"}\`
+    : "Nothing learned yet. A preference is offered once three different sessions have stated it.")
     + (state.testMode ? ' <span class="testbadge">TEST MODE — cooldowns &amp; holdout off</span>' : "")
     + (state.fixtureStore ? \` <span class="testbadge">FIXTURE DB — \${esc(state.fixtureStore.split(/[\\\\/]/).pop())}</span>\` : "");
 
   const box = $("hints");
   box.innerHTML = "";
 
-  if (state.holdout) {
-    box.innerHTML = '<div class="empty">Holdout arm — hints deliberately suppressed at this trigger point so accept-rate can be compared against showing nothing.</div>';
-  } else if (!state.hints.length) {
-    const why = state.suppressed.length
-      ? \`\${state.suppressed.length} candidate(s) generated, all gated out (\${[...new Set(state.suppressed.map(s => s.reason))].join(", ")}).\`
-      : "No candidates matched.";
-    box.innerHTML = '<div class="empty">' + why + '</div>';
-  } else if (!undecided.length) {
-    box.innerHTML = '<div class="done">All hints in this proposal have been answered. Ask the agent to propose again.</div>';
+  if (!deck.length) {
+    box.innerHTML = '<div class="empty">Nothing learned yet. Say how you like to be worked with '
+      + '— "explain in simple words", "ask before committing" — and after three different '
+      + 'sessions it will be offered here.</div>';
   } else {
-    if (page >= undecided.length) page = 0;
-    const h = undecided[page];
-    // Reconstruct the intermediates the score was built from, so the panel can
-    // show the chain rather than a flat list of unrelated-looking numbers.
-    const ev = h.evidence || {};
-    const hasFiles = ev.fileOverlap != null && ev.fileOverlap > 0;
-    const bm25 = (ev.textScore != null && ev.coverage != null)
-      ? (ev.textScore - 0.75 * ev.coverage) / 0.25
-      : null;
-    const recFactor = ev.recency != null ? 0.55 + 0.45 * ev.recency : null;
+    if (page >= deck.length) page = 0;
+    const r = deck[page];
     const el = document.createElement("div");
     el.className = "row";
     el.innerHTML = \`
       <div class="bulb">&#128161;</div>
-      <div class="card">
+      <div class="card \${r.status === "retired" ? "off" : ""}">
         <div class="card-head">
-          <div class="title">\${h.title}\${h.explore ? '<span class="badge">exploration</span>' : ''}</div>
+          <div class="title">\${esc(r.ask || r.rule)}</div>
           <div class="pager">
-            <button \${undecided.length < 2 ? "disabled" : ""} data-nav="-1">&lt;</button>
-            <span>\${page + 1} / \${undecided.length}</span>
-            <button \${undecided.length < 2 ? "disabled" : ""} data-nav="1">&gt;</button>
+            <button \${deck.length < 2 ? "disabled" : ""} data-nav="-1">&lt;</button>
+            <span>\${page + 1} / \${deck.length}</span>
+            <button \${deck.length < 2 ? "disabled" : ""} data-nav="1">&gt;</button>
           </div>
         </div>
-        <div class="body">\${h.body}</div>
-        \${h.agentJudgment ? \`<div class="verdict \${h.agentJudgment.verdict === "agent_relevant" ? "yes" : "no"}">
-          Agent: \${h.agentJudgment.verdict === "agent_relevant" ? "relevant" : "not relevant"}\${h.agentJudgment.reason ? " — " + esc(h.agentJudgment.reason) : ""}
-        </div>\` : ""}
-        <div class="actions">
-          <button data-why="1">Why this?</button>
-          <div class="spacer"></div>
-          <button class="primary" data-out="accepted">Accept</button>
-          <button data-out="rejected">Reject</button>
+        <div class="body">
+          \${r.ask ? \`as a rule: \${esc(r.rule)}\` : ""}
+          \${r.quotes && r.quotes.length ? \`<div class="quote">You said: "\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
         </div>
-        <div class="why" id="why">
-          <table>
-            <tr class="group"><td colspan="2">ingredients &rarr; retrieval score</td></tr>
-            <tr class="sub"><td>term coverage <span class="formula">×0.75</span></td><td class="v">\${pct(ev.coverage)}</td></tr>
-            <tr class="sub"><td>bm25 tie-break <span class="formula">×0.25</span></td><td class="v">\${bm25 == null ? "–" : num(bm25)}</td></tr>
-            <tr class="sub"><td>= text match</td><td class="v">\${num(ev.textScore)}</td></tr>
-            <tr class="sub"><td>file overlap \${hasFiles ? '<span class="formula">0.65/0.35 split</span>' : '<span class="formula">unused, no files</span>'}</td><td class="v">\${hasFiles ? pct(ev.fileOverlap) : "–"}</td></tr>
-            <tr class="sub"><td>recency <span class="formula">→ ×(0.55+0.45r)</span></td><td class="v">\${pct(ev.recency)} → ×\${recFactor == null ? "?" : num(recFactor)}</td></tr>
-            <tr class="calc"><td>retrieval score</td><td class="v">\${num(h.retrievalScore)}</td></tr>
-            <tr class="group"><td colspan="2">learning &rarr; multiplier</td></tr>
-            <tr class="sub"><td>learned accept rate</td><td class="v">\${pct(h.acceptanceRate)} (n=\${h.observations})</td></tr>
-            <tr class="sub"><td>= 0.5 + rate</td><td class="v">×\${num(h.personalMultiplier)}</td></tr>
-            <tr class="calc"><td>final score <span class="formula">\${num(h.retrievalScore)} × \${num(h.personalMultiplier)}</span></td><td class="v">\${num(h.finalScore)}</td></tr>
-          </table>
+        <div class="verdict \${r.status === "trusted" ? "yes" : ""}">\${
+          r.status === "trusted" ? \`Applied without asking · \${r.accepts} accepted in a row\`
+          : r.status === "active" ? \`\${badgeText(r)} · \${5 - (r.streak || 0)} more to stop asking\`
+          : r.status === "candidate" ? \`Seen in \${r.sessions} of 3 sessions — not offered yet\`
+          : \`Turned off · \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept\`
+        }</div>
+        <div class="actions">
+          \${deck.length > 1 && r.status !== "retired" ? \`<select data-merge="\${r.id}">
+            <option value="">merge into…</option>\${
+              deck.filter(o => o.id !== r.id && o.status !== "retired")
+                  .map(o => \`<option value="\${o.id}">\${esc((o.rule || "").slice(0, 30))}</option>\`).join("")
+            }</select>\` : ""}
+          <div class="spacer"></div>
+          \${r.status === "active" ? \`
+            <button class="primary" data-act="accept" data-id="\${r.id}">Yes, please</button>
+            <button data-act="reject" data-id="\${r.id}">Not this time</button>\` : ""}
+          \${r.status === "retired"
+            ? \`<button data-act="restore" data-id="\${r.id}">Restore</button>\`
+            : \`<button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>\`}
         </div>
       </div>\`;
     box.appendChild(el);
 
     el.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => {
-      page = (page + Number(b.dataset.nav) + undecided.length) % undecided.length;
+      page = (page + Number(b.dataset.nav) + deck.length) % deck.length;
       render();
     });
-    el.querySelector("[data-why]").onclick = () => $("why").classList.toggle("open");
-    el.querySelectorAll("[data-out]").forEach(b => b.onclick = async () => {
+
+    const post = async (body) => {
       el.querySelectorAll("button").forEach(x => x.disabled = true);
-      await fetch("/outcome", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hintId: h.hintId, outcome: b.dataset.out })
+      await fetch("/rules", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       await load();
+    };
+    el.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+      const id = b.dataset.id;
+      if (b.dataset.act === "accept") return post({ outcome: { id, outcome: "accepted" } });
+      if (b.dataset.act === "reject") return post({ outcome: { id, outcome: "rejected" } });
+      if (b.dataset.act === "retire") return post({ retire: id });
+      if (b.dataset.act === "restore") return post({ restore: id });
     });
+    const sel = el.querySelector("select[data-merge]");
+    if (sel) sel.onchange = () => {
+      if (sel.value) post({ merge: { keep: sel.value, remove: sel.dataset.merge } });
+    };
   }
 
   renderSent();
-  renderRules();
+}
+
+function badgeText(r) {
+  return \`Waiting for your answer · \${r.streak || 0}/5 accepted\`;
 }
 
 async function load() {
