@@ -73,6 +73,21 @@ earn nothing.
 Turning a rule off keeps its evidence and offers **restore**. That exists
 because testing the button destroyed a real observation with no way back.
 
+### Two sentences per rule
+
+A rule holds an instruction and a question, because they have different
+audiences:
+
+| Field | Goes to | Example |
+| --- | --- | --- |
+| `rule` | the agent, as context | *Open the result so I can see it* |
+| `ask` | the approval card | *Shall I open the result so you can see it?* |
+
+Showing the instruction on the card reads as the user's own words quoted back
+at them, which is a strange thing to be asked to approve. The instruction is
+still shown underneath, so nothing is hidden. A later session may supply a
+question an earlier one omitted, but cannot overwrite one that exists.
+
 ### No keyword matching
 
 The agent is shown the current rule list at session start and either adds
