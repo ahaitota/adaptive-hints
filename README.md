@@ -14,8 +14,7 @@ adaptive-hints/
 │                        the app discovers extensions by finding it
 ├── src/                 implementation
 │   ├── rules.mjs          preferences learned across sessions
-│   ├── retrieval.mjs      search over the local session store
-│   ├── ranker.mjs         scoring, gating, exploration
+│   ├── retrieval.mjs      search over the local session store│   ├── ranker.mjs         scoring, gating, exploration
 │   ├── store.mjs          the learning log and settings
 │   ├── renderer.mjs       the canvas panel
 │   ├── prompt-filter.mjs  real prompts vs runtime-injected text
@@ -121,7 +120,9 @@ node test/observe.mjs --promote
 ```
 
 Rules live in `artifacts/rules.json`: plain text, readable, editable and
-deletable without tooling, like the hint log.
+deletable without tooling, like the hint log. Which cards have been answered in
+a given conversation lives beside it in `artifacts/answered/<sessionId>.json`.
+Both hold quotes from real conversations, so both are gitignored.
 
 ## What it does
 
@@ -357,6 +358,12 @@ would be asking about a decision the system has not made; and ones the user has
 declined away are not kept as dead cards — a preference nobody wants should not
 reappear at the end of the list. Both return on their own: one when a third
 session confirms it, the other when the user states it again.
+
+An answered card leaves the deck for the rest of the conversation, and the
+preference is offered again in the next one — which is where the streak is
+meant to build. That is not only so the click visibly does something: without
+it, reloading the panel offered the same card again and answering twice
+inflated the streak.
 
 Merging duplicates is **not** on the card. A dropdown there asked the user to
 spot near-identical wordings and think about how preferences are stored;
