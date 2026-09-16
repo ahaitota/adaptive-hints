@@ -85,6 +85,35 @@ rebuilding produces byte-identical databases, so a change in test results
 reflects a change in the code rather than a reshuffle of the data. (Verified:
 two consecutive builds produce the same file hash.)
 
+### Nothing measures whether a hint was actually *useful*
+
+Every test in Group A measures whether retrieval found the right **subject**.
+None measures whether the session it found contained guidance worth having.
+
+Accepting a hint is a **prediction** — it looks useful at click time. The system
+recorded 210 impressions, 10 accepts and 4 delivered briefings, and never once
+checked what those briefings changed.
+
+`hint-value.mjs` starts closing that gap from data already on disk: it compares
+how much of a briefing's distinctive vocabulary appears in the agent's next
+reply against replies from **before** the briefing arrived, which it cannot have
+influenced. The control is the whole point — any two messages in one project
+share vocabulary, so a raw overlap number would repeat the mistake that made the
+first version of A2 score 100% while proving nothing.
+
+First run, on 4 briefings: one showed **+10%**, three showed about **0%**. With
+n=4 that is not evidence of anything; the script exists so the data accumulates
+instead of being discarded.
+
+Two limits worth stating: it counts words, so it misses guidance the agent
+followed without reusing the vocabulary, and it cannot separate guidance that
+was *useful* from guidance that was merely *echoed*.
+
+The stronger measurement is already half-built and unused: the gate withholds a
+hint 8% of the time on purpose (13 holdouts so far), which is the right
+experiment design — but no outcome is recorded afterwards, so the arm proves
+nothing yet.
+
 ## Files
 
 | File | Purpose |
@@ -95,6 +124,7 @@ two consecutive builds produce the same file hash.)
 | `run-group-a.mjs` | Runs tests A1 to A7 and prints a report |
 | `ask.mjs` | Ask the fake data a question by hand and see why it answered |
 | `check-real.mjs` | Old vs new settings on the real store, read-only |
+| `hint-value.mjs` | Did accepted guidance reach the agent's answer? Read-only |
 | `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
 | `rarity-real.mjs` | Tests whether word frequency can spot an empty question, read-only |
 | `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
