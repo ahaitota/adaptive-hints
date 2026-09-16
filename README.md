@@ -59,6 +59,7 @@ that nothing is activated.
 | **candidate** | fewer than 3 sessions | invisible, gathering evidence |
 | **active** | 3 different sessions state it | applied, and asks each time |
 | **trusted** | 5 accepts in a row | applied silently |
+| **declined** | 3 declines in a row | not shown; returns if stated again |
 
 Repetition and approval answer different questions. Repetition shows you
 **meant** it. It cannot show that the rule was written down correctly, or that
@@ -70,14 +71,15 @@ that is wrong once will be wrong again, and silence is exactly when being wrong
 costs most. Accepts must be **consecutive** — six accepts around one rejection
 earn nothing.
 
-Turning a rule off keeps its evidence and offers **restore**, which exists
-because testing the button destroyed a real observation with no way back.
-Restoring needs no fresh mentions — the evidence never went away.
+Declining it three times in a row stops it offering itself — the same mechanism
+as accepting five times to earn silence, pointed the other way. An accept in
+between resets the streak, so it takes three deliberate noes rather than one
+mis-click.
 
-Turning off is also a decision that sticks. Stating the same preference again
-while it is off attaches to the existing rule and leaves it off; it used to
-create a second rule with identical text, which promoted itself and quietly
-overrode the user.
+Saying the preference again brings it back. There is no *turn off* button and
+no *restore* button: both asked the user to manage storage, turning something
+off left a dead card in the deck, and *turn off* read almost the same as
+*decline*. A preference the user has turned away from is simply not shown.
 
 ### Two sentences per rule
 
@@ -337,17 +339,19 @@ levels are `info`, `warning`, `error` only; passing `debug` throws
 ## Panel
 
 The panel shows **one learned preference at a time**, in a card, with a pager
-to walk through them: waiting for an answer first, then already running
-silently, then turned off.
-
-Preferences still gathering evidence are **not shown**. They have not been
-offered, so asking the user to react to them would be asking about a decision
-the system has not made. The header counts them — *"2 still being learned"* —
-and they appear the moment a third session confirms them.
+to walk through them: waiting for an answer first, then the ones already
+applied silently.
 
 Each card leads with the question, shows the instruction underneath, and quotes
-your own words as evidence. Accept, decline, turn off and restore all
-live on the card, each with a tooltip saying what it does.
+your own words as evidence. **Accept** and **Decline** are the only choices; a
+preference that is already applied silently offers **Ask me again** instead.
+
+The deck holds only what is being offered or applied. Preferences still
+gathering evidence have not been offered, so asking the user to react to them
+would be asking about a decision the system has not made; and ones the user has
+declined away are not kept as dead cards — a preference nobody wants should not
+reappear at the end of the list. Both return on their own: one when a third
+session confirms it, the other when the user states it again.
 
 Merging duplicates is **not** on the card. A dropdown there asked the user to
 spot near-identical wordings and think about how preferences are stored;

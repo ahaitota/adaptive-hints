@@ -23,8 +23,8 @@ import { renderHtml } from "./src/renderer.mjs";
 import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
-    loadRules, saveRules, addObservation, promote, rulesFor, ruleMenu,
-    mergeRules, retireRule, restoreRule, retiredRules, recordRuleOutcome,
+    loadRules, saveRules, addObservation, promote, ruleMenu,
+    mergeRules, retireRule, restoreRule, recordRuleOutcome,
     silentRules, askingRules,
     distinctSessions, distinctRepositories, describe, MOMENTS,
 } from "./src/rules.mjs";
