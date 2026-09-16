@@ -25,7 +25,7 @@ import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, saveRules, addObservation, promote, ruleMenu,
     mergeRules, retireRule, restoreRule, recordRuleOutcome,
-    silentRules, askingRules,
+    silentRules, askingRules, answeredIn, markAnswered,
     distinctSessions, distinctRepositories, describe, MOMENTS,
 } from "./src/rules.mjs";
 import {
@@ -134,17 +134,20 @@ function currentState(sessionId) {
         injections: readInjections(sessionId),
         rules: (() => {
             const { trusted, active, candidates, dropped } = describe(syncedRules());
+            const answered = answeredIn(sessionId);
             const shape = (r) => ({
                 id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
                 accepts: r.accepts ?? 0, rejects: r.rejects ?? 0, streak: r.acceptStreak ?? 0,
                 quotes: r.observations.slice(-2).map((o) => o.quote),
             });
+            const unanswered = (list) => list.filter((r) => !answered.has(r.id)).map(shape);
             return {
-                trusted: trusted.map(shape),
-                active: active.map(shape),
+                trusted: unanswered(trusted),
+                active: unanswered(active),
                 candidates: candidates.map(shape),
                 dropped: dropped.map(shape),
+                answeredHere: answered.size,
             };
         })(),
         hints,
@@ -416,7 +419,13 @@ async function startServer(instanceId, sessionId) {
                     if (merge) mergeRules(store, merge.keep, merge.remove);
                     if (retire) retireRule(store, retire);
                     if (restore) restoreRule(store, restore);
-                    if (outcome) recordRuleOutcome(store, outcome.id, outcome.outcome);
+                    if (outcome) {
+                        recordRuleOutcome(store, outcome.id, outcome.outcome);
+                        // Take it off the deck for the rest of this
+                        // conversation, so the click visibly does something and
+                        // a reload cannot answer the same card twice.
+                        markAnswered(sessionId, outcome.id);
+                    }
                     saveRules(store);
                     broadcast();
                     res.writeHead(200, { "Content-Type": "application/json" });

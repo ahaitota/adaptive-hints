@@ -8,7 +8,7 @@
 
 import {
     addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
-    recordRuleOutcome, silentRules, askingRules,
+    recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu,
 } from "../src/rules.mjs";
 import { join } from "node:path";
@@ -316,6 +316,34 @@ console.log("=".repeat(62));
     check("...and it comes back, since there is no Restore button to press",
         r.status === "active", `status=${r.status}`);
     check("the new evidence is still recorded", r.observations.length === 4);
+}
+
+// --- An answer is remembered for the rest of the conversation --------------
+//
+// The card used to stay on screen after being answered, which looked like the
+// click had done nothing, and a panel reload could answer the same card twice
+// and inflate the streak.
+//
+// These functions resolve their directory once, at import time, so they cannot
+// be pointed at a temporary folder from here. The test therefore writes real
+// files under obviously-fake session ids and removes them afterwards — and the
+// first version of it left one behind, which is why the cleanup is checked.
+{
+    const ids = ["__test_session_a__", "__test_session_b__"];
+    const paths = ids.map((id) => join(ANSWERED_DIR, `${id}.json`));
+
+    check("nothing is answered in a fresh session", answeredIn(ids[0]).size === 0);
+    markAnswered(ids[0], "r1");
+    check("an answer is remembered", answeredIn(ids[0]).has("r1"));
+    check("it does not leak into another session", !answeredIn(ids[1]).has("r1"));
+    markAnswered(ids[0], "r2");
+    check("a second answer joins the first",
+        answeredIn(ids[0]).has("r1") && answeredIn(ids[0]).has("r2") && answeredIn(ids[0]).size === 2);
+    markAnswered(ids[0], "r1");
+    check("answering the same card twice does not duplicate it", answeredIn(ids[0]).size === 2);
+
+    for (const p of paths) rmSync(p, { force: true });
+    check("the test left no files behind", !paths.some((p) => existsSync(p)));
 }
 
 // --- Merge keeps the evidence ----------------------------------------------

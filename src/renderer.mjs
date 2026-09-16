@@ -273,9 +273,12 @@ function renderInner() {
   box.innerHTML = "";
 
   if (!deck.length) {
-    box.innerHTML = '<div class="empty">Nothing to approve yet. Say how you like to be worked with '
-      + '— "explain in simple words", "ask before committing" — and once a few sessions '
-      + 'have said the same thing, it will appear here.</div>';
+    box.innerHTML = rules.answeredHere
+      ? '<div class="done">Thanks — that is everything for now. '
+        + 'They will come round again next time.</div>'
+      : '<div class="empty">Nothing to approve yet. Say how you like to be worked with '
+        + '— "explain in simple words", "ask before committing" — and once a few sessions '
+        + 'have said the same thing, it will appear here.</div>';
   } else {
     if (page >= deck.length) page = 0;
     const r = deck[page];
@@ -316,6 +319,9 @@ function renderInner() {
 
     const post = async (body) => {
       el.querySelectorAll("button").forEach(x => x.disabled = true);
+      // Answering removes the card, so the next one should be at the top of
+      // the deck rather than wherever the old index happens to land.
+      page = 0;
       await fetch("/rules", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

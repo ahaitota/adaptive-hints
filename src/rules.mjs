@@ -341,6 +341,40 @@ export function retiredRules(store = loadRules()) {
     return store.rules.filter((r) => r.status === "retired");
 }
 
+// --- What has already been answered in this conversation -------------------
+//
+// A card stayed on screen after being answered, so the panel looked like it
+// had ignored the click. It also meant a reload could answer the same card
+// twice and inflate the streak. Answers are remembered per session: the card
+// leaves the deck for the rest of this conversation, and the preference is
+// offered again in the next one, which is where the streak is supposed to
+// build.
+const ANSWERED_DIR = join(RULES_DIR, "answered");
+export { ANSWERED_DIR };
+
+function answeredPath(sessionId) {
+    const safe = String(sessionId || "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
+    return join(ANSWERED_DIR, `${safe}.json`);
+}
+
+export function answeredIn(sessionId) {
+    const p = answeredPath(sessionId);
+    if (!existsSync(p)) return new Set();
+    try {
+        return new Set(JSON.parse(readFileSync(p, "utf8")));
+    } catch {
+        return new Set();
+    }
+}
+
+export function markAnswered(sessionId, ruleId) {
+    mkdirSync(ANSWERED_DIR, { recursive: true });
+    const seen = answeredIn(sessionId);
+    seen.add(ruleId);
+    writeFileSync(answeredPath(sessionId), JSON.stringify([...seen]), "utf8");
+    return seen;
+}
+
 /** The list shown to the agent so it can reuse an id instead of inventing one. */
 export function ruleMenu(store = loadRules()) {
     return store.rules
