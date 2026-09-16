@@ -219,6 +219,31 @@ console.log("=".repeat(62));
     })());
 }
 
+// --- Promotion is recomputed, not remembered -------------------------------
+//
+// Promotion used to run only when an observation was recorded, so a rule could
+// sit at three sessions and stay a candidate if the last write came through
+// some other path. Running promote() again on an already-loaded store must be
+// safe and must fix it.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "X", when: "session_start", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    // Simulate a store written by something that never called promote().
+    r.status = "candidate";
+    delete r.activatedAt;
+    check("a candidate already past the bar is promoted on the next pass",
+        promote(s).length === 1 && r.status === "active");
+    check("promotion is idempotent", promote(s).length === 0 && r.status === "active");
+    check("it does not disturb a trusted rule", (() => {
+        for (let i = 0; i < 5; i++) recordRuleOutcome(s, r.id, "accepted");
+        if (r.status !== "trusted") return false;
+        promote(s);
+        return r.status === "trusted";
+    })());
+}
+
 // --- Merge keeps the evidence ----------------------------------------------
 {
     const s = store();

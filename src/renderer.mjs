@@ -14,10 +14,12 @@ export function renderHtml() {
 <title>Adaptive hints</title>
 <style>
   :root { color-scheme: light dark; }
-  /* Everything below is sized in em/rem against this, so the whole panel
-     scales with its own width instead of staying at one fixed size while the
-     user resizes it. clamp keeps it readable at both extremes. */
-  html { font-size: clamp(12px, 1.15vw + 8px, 20px); }
+  /* Sizes are in rem/em so the whole panel scales together. The root size is
+     set from JavaScript rather than with a vw clamp: inside an iframe, vw does
+     not recalculate on resize until something forces a repaint, so the panel
+     sat stretched until the mouse moved over it. A ResizeObserver updates it
+     the moment the panel changes width. This value is only the fallback. */
+  html { font-size: 15px; }
   body {
     margin: 0;
     padding: 1.15rem;
@@ -162,6 +164,24 @@ export function renderHtml() {
 
 <script>
 const $ = (id) => document.getElementById(id);
+
+// Scale the panel from its real width, measured, rather than from vw units.
+// Inside an iframe a vw-based clamp is not re-evaluated when the frame is
+// resized until some other repaint happens, so the panel looked stretched
+// until the mouse entered it. Observing the element gives the correct size
+// immediately, on the same frame as the resize.
+function fitToWidth() {
+  const w = document.documentElement.clientWidth || 360;
+  const size = Math.max(12, Math.min(20, 8 + w * 0.0115));
+  document.documentElement.style.fontSize = size.toFixed(2) + "px";
+}
+fitToWidth();
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(fitToWidth).observe(document.documentElement);
+} else {
+  addEventListener("resize", fitToWidth);
+}
+
 let state = { hints: [], task: "", trigger: "", holdout: false, suppressed: [] };
 let lastSig = null;
 let page = 0;
@@ -227,19 +247,21 @@ function render() {
 
 function renderInner() {
   const rules = state.rules || { trusted: [], active: [], candidates: [], retired: [] };
-  // One deck, in the order that matters: things waiting on a decision first,
-  // then things still gathering evidence, then what is already running, then
-  // what was turned off. The pager walks all of them.
+  // Candidates are deliberately absent. A preference that has not reached three
+  // sessions has not been offered, so showing it would ask the user to react to
+  // something the system has not decided about — and the evidence behind it is
+  // still being gathered. They appear the moment they are confirmed.
   const deck = [
     ...rules.active,
-    ...rules.candidates,
     ...(rules.trusted || []),
     ...(rules.retired || []),
   ];
   const waiting = rules.active.length;
+  const learning = (rules.candidates || []).length;
 
   $("ctx").innerHTML = (deck.length
-    ? \`\${waiting ? \`\${waiting} waiting for you\` : "Nothing waiting"} · \${deck.length} learned preference\${deck.length === 1 ? "" : "s"}\`
+    ? \`\${waiting ? \`\${waiting} waiting for you\` : "Nothing waiting"} · \${deck.length} preference\${deck.length === 1 ? "" : "s"}\`
+      + (learning ? \` · \${learning} still being learned\` : "")
     : "Nothing learned yet. A preference is offered once three different sessions have stated it.")
     + (state.testMode ? ' <span class="testbadge">TEST MODE — cooldowns &amp; holdout off</span>' : "")
     + (state.fixtureStore ? \` <span class="testbadge">FIXTURE DB — \${esc(state.fixtureStore.split(/[\\\\/]/).pop())}</span>\` : "");
@@ -248,9 +270,11 @@ function renderInner() {
   box.innerHTML = "";
 
   if (!deck.length) {
-    box.innerHTML = '<div class="empty">Nothing learned yet. Say how you like to be worked with '
-      + '— "explain in simple words", "ask before committing" — and after three different '
-      + 'sessions it will be offered here.</div>';
+    box.innerHTML = '<div class="empty">Nothing to approve yet. Say how you like to be worked with '
+      + '— "explain in simple words", "ask before committing" — and once three different '
+      + 'sessions have said it, it will appear here.'
+      + (learning ? \` <br><br>\${learning} preference\${learning === 1 ? " is" : "s are"} still gathering evidence.\` : "")
+      + '</div>';
   } else {
     if (page >= deck.length) page = 0;
     const r = deck[page];
@@ -273,8 +297,7 @@ function renderInner() {
         </div>
         <div class="verdict \${r.status === "trusted" ? "yes" : ""}">\${
           r.status === "trusted" ? \`Applied without asking · \${r.accepts} accepted in a row\`
-          : r.status === "active" ? \`\${badgeText(r)} · \${5 - (r.streak || 0)} more to stop asking\`
-          : r.status === "candidate" ? \`Seen in \${r.sessions} of 3 sessions — not offered yet\`
+          : r.status === "active" ? \`Waiting for your answer · \${r.streak || 0}/5 accepted · \${5 - (r.streak || 0)} more to stop asking\`
           : \`Turned off · \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept\`
         }</div>
         <div class="actions">
@@ -292,11 +315,9 @@ function renderInner() {
               title="Do not apply it now. Resets the count to zero.">Not this time</button>\` : ""}
           \${r.status === "retired"
             ? \`<button data-act="restore" data-id="\${r.id}" title="Use this preference again">Restore</button>\`
-            : \`<button data-act="retire" data-id="\${r.id}" title="\${
-                r.status === "candidate"
-                  ? "Stop collecting evidence for this. It can be restored."
-                  : "Stop using this preference. Its evidence is kept and it can be restored."
-              }">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>\`}
+            : \`<button data-act="retire" data-id="\${r.id}"
+                title="Stop using this preference. Its evidence is kept and it can be restored."
+              >Turn off</button>\`}
         </div>
       </div>\`;
     box.appendChild(el);
@@ -328,10 +349,6 @@ function renderInner() {
   }
 
   renderSent();
-}
-
-function badgeText(r) {
-  return \`Waiting for your answer · \${r.streak || 0}/5 accepted\`;
 }
 
 async function load() {

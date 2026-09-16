@@ -77,6 +77,24 @@ function broadcast() {
     }
 }
 
+/**
+ * Load the rules, promoting anything that has earned it.
+ *
+ * Promotion used to happen only when the agent recorded an observation, which
+ * left the invariant "three sessions means active" true only if the last write
+ * happened to come through that path. A rule was found sitting at 3 of 3 and
+ * still a candidate. Doing it on read as well makes the rule file
+ * self-correcting whatever wrote it last — including a hand edit — and costs a
+ * pass over a few hundred rows.
+ */
+function syncedRules() {
+    const store = loadRules();
+    const before = store.rules.map((r) => r.status).join();
+    promote(store);
+    if (store.rules.map((r) => r.status).join() !== before) saveRules(store);
+    return store;
+}
+
 /** Current panel state: the active proposal plus derived learning metrics. */
 function currentState(sessionId) {
     const proposal = loadProposal(sessionId);
@@ -115,7 +133,7 @@ function currentState(sessionId) {
         fixtureStore: sessionStorePath() !== DEFAULT_SESSION_STORE ? sessionStorePath() : null,
         injections: readInjections(sessionId),
         rules: (() => {
-            const { trusted, active, candidates } = describe(loadRules());
+            const { trusted, active, candidates } = describe(syncedRules());
             const shape = (r) => ({
                 id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
@@ -814,8 +832,9 @@ session = await joinSession({
             try {
                 const sessionId = invocation?.sessionId;
                 const repository = repositoryOf(input?.workspacePath);
-                const silent = silentRules({ moment: "session_start", repository });
-                const asking = askingRules({ moment: "session_start", repository });
+                const store = syncedRules();
+                const silent = silentRules({ moment: "session_start", repository }, store);
+                const asking = askingRules({ moment: "session_start", repository }, store);
                 const parts = [];
 
                 // Trusted rules have been accepted five times running. They are
