@@ -117,7 +117,7 @@ function currentState(sessionId) {
         rules: (() => {
             const { trusted, active, candidates } = describe(loadRules());
             const shape = (r) => ({
-                id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
+                id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
                 accepts: r.accepts ?? 0, rejects: r.rejects ?? 0, streak: r.acceptStreak ?? 0,
                 quotes: r.observations.slice(-2).map((o) => o.quote),
@@ -533,17 +533,25 @@ session = await joinSession({
                         required: ["quote"],
                         properties: {
                             ruleId: { type: "string", description: "Existing rule to add weight to, e.g. r1" },
-                            rule: { type: "string", description: "One line, if no existing rule fits" },
+                            rule: {
+                                type: "string",
+                                description: "The instruction, as the agent should follow it. One line, e.g. 'Explain in plain language'",
+                            },
+                            ask: {
+                                type: "string",
+                                description: "The same thing as a short, polite question to the user, for the approval card. "
+                                    + "e.g. 'Would you like me to explain things in plain language?' Never quote their prompt back at them.",
+                            },
                             when: { type: "string", enum: MOMENTS, description: "When this should reach the agent" },
                             scope: { type: "string", description: "'global', or a repository name" },
                             quote: { type: "string", description: "The user's own words" },
                         },
                     },
                     handler: async (ctx) => {
-                        const { ruleId, rule, when, scope, quote } = ctx.input ?? {};
+                        const { ruleId, rule, ask, when, scope, quote } = ctx.input ?? {};
                         const store = loadRules();
                         const target = addObservation(store, {
-                            ruleId, rule, when, scope: scope || "global",
+                            ruleId, rule, ask, when, scope: scope || "global",
                             repository: repositoryOf(session.workspacePath),
                             sessionId: ctx.sessionId,
                             quote,
@@ -587,7 +595,7 @@ session = await joinSession({
                         if (merge || retire) { saveRules(store); broadcast(); }
                         const { trusted, active, candidates } = describe(store);
                         const shape = (r) => ({
-                            id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
+                            id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                             sessions: distinctSessions(r), repositories: distinctRepositories(r),
                             accepts: r.accepts ?? 0, rejects: r.rejects ?? 0,
                             quotes: r.observations.slice(-3).map((o) => o.quote),

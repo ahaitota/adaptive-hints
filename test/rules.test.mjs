@@ -182,6 +182,32 @@ console.log("=".repeat(62));
     })());
 }
 
+// --- The card asks a question; the agent gets an instruction --------------
+//
+// Showing the instruction on the card reads as the user's own words quoted
+// back at them, which is a strange thing to be asked to approve.
+{
+    const s = store();
+    const r = addObservation(s, {
+        rule: "Explain in plain language",
+        ask: "Would you like me to explain things in plain language?",
+        sessionId: "A", quote: "in simple words",
+    });
+    check("a rule keeps both an instruction and a question",
+        r.rule === "Explain in plain language" && /^Would you like/.test(r.ask));
+    check("a later session can supply the question a first one omitted", (() => {
+        const s2 = store();
+        const a = addObservation(s2, { rule: "Ask before committing", sessionId: "A", quote: "q" });
+        if (a.ask !== null) return false;
+        addObservation(s2, { ruleId: a.id, ask: "Shall I check with you first?", sessionId: "B", quote: "q" });
+        return a.ask === "Shall I check with you first?";
+    })());
+    check("an existing question is not overwritten", (() => {
+        addObservation(s, { ruleId: r.id, ask: "Something else entirely?", sessionId: "B", quote: "q" });
+        return r.ask === "Would you like me to explain things in plain language?";
+    })());
+}
+
 // --- Merge keeps the evidence ----------------------------------------------
 {
     const s = store();

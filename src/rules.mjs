@@ -102,7 +102,7 @@ function sameRule(a, b) {
  * the current list and decides, which is what removes keyword matching from
  * this system entirely.
  */
-export function addObservation(store, { ruleId, rule, when, scope = "global", repository, sessionId, quote }) {
+export function addObservation(store, { ruleId, rule, ask, when, scope = "global", repository, sessionId, quote }) {
     if (!sessionId) throw new Error("addObservation requires sessionId");
     if (!ruleId && !rule) throw new Error("addObservation requires ruleId or rule");
 
@@ -117,7 +117,12 @@ export function addObservation(store, { ruleId, rule, when, scope = "global", re
     if (!target) {
         target = {
             id: nextId(store),
+            // Two sentences, on purpose. `rule` is an instruction and goes to
+            // the agent; `ask` is a question and goes on the card. Showing the
+            // instruction to the user reads as their own words quoted back at
+            // them, which is a strange thing to be asked to approve.
             rule: String(rule).trim(),
+            ask: String(ask || "").trim() || null,
             when: MOMENTS.includes(when) ? when : "session_start",
             scope,
             status: "candidate",
@@ -127,6 +132,9 @@ export function addObservation(store, { ruleId, rule, when, scope = "global", re
             observations: [],
         };
         store.rules.push(target);
+    } else if (ask && !target.ask) {
+        // A later session may phrase the question where an earlier one did not.
+        target.ask = String(ask).trim();
     }
 
     target.observations.push({

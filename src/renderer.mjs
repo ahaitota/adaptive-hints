@@ -235,7 +235,7 @@ function renderRules() {
 
   $("ruleslist").innerHTML = all.map(r => \`
     <div class="rule" data-id="\${r.id}">
-      <div class="txt">\${badge(r)} \${esc(r.rule)}</div>
+      <div class="txt">\${badge(r)} \${esc(r.status === "active" && r.ask ? r.ask : r.rule)}</div>
       <div class="meta">
         when: \${esc(r.when)} · scope: \${esc(r.scope)} ·
         \${r.sessions} session\${r.sessions === 1 ? "" : "s"}\${r.accepts ? \` · \${r.accepts} accepted\` : ""}\${r.rejects ? \`, \${r.rejects} rejected\` : ""}
@@ -244,11 +244,12 @@ function renderRules() {
           <option value="">merge into…</option>\${options(r.id)}
         </select>\` : ""}
       </div>
+      \${r.status === "active" && r.ask ? \`<div class="meta">as a rule: \${esc(r.rule)}</div>\` : ""}
       \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
       \${r.status === "active" ? \`<div class="ruleact">
-        <button class="ok" data-act="accept" data-id="\${r.id}">Keep applying this</button>
+        <button class="ok" data-act="accept" data-id="\${r.id}">Yes, please</button>
         <button data-act="reject" data-id="\${r.id}">Not this time</button>
-        <span class="hint">\${5 - (r.streak || 0)} more accept\${5 - (r.streak || 0) === 1 ? "" : "s"} and it stops asking</span>
+        <span class="hint">\${5 - (r.streak || 0)} more yes\${5 - (r.streak || 0) === 1 ? "" : "es"} and it stops asking</span>
       </div>\` : ""}
     </div>\`).join("")
   // Turned-off rules are kept and shown, not deleted: the evidence behind them
