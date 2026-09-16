@@ -331,14 +331,24 @@ levels are `info`, `warning`, `error` only; passing `debug` throws
 ## Panel
 
 The panel shows **one learned preference at a time**, in a card, with a pager
-to walk through them. They are ordered by what needs you most: waiting for an
-answer, then still gathering evidence, then already running silently, then
-turned off.
+to walk through them: waiting for an answer first, then already running
+silently, then turned off.
+
+Preferences still gathering evidence are **not shown**. They have not been
+offered, so asking the user to react to them would be asking about a decision
+the system has not made. The header counts them — *"2 still being learned"* —
+and they appear the moment a third session confirms them.
 
 Each card leads with the question, shows the instruction underneath, quotes
 your own words as evidence, and says which stage it is in — *waiting for your
-answer · 2/5 accepted*, *seen in 2 of 3 sessions*, *applied without asking*.
-Accept, reject, merge, turn off and restore all live on the card.
+answer · 2/5 accepted*, *applied without asking*, *turned off*. Accept, reject,
+merge, turn off and restore all live on the card, each with a tooltip saying
+what it costs.
+
+Cards are a fixed height with the buttons pinned to the bottom, and the panel
+scales with its own width. Both exist because of how it felt to use: paging
+between cards of different heights moved the buttons under the cursor, and the
+panel sat stretched after a resize until the mouse entered it.
 
 Two things used to sit here and no longer do. A **retrieval hint card** with a
 "Why this?" score breakdown occupied this slot, which was the wrong way round —
