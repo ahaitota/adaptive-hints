@@ -273,7 +273,6 @@ export function computeCounters() {
             counters.set(k, {
                 type: imp.type, trigger: imp.trigger,
                 accepted: 0, rejected: 0, ignored: 0,
-                agentRelevant: 0, agentIrrelevant: 0,
                 superseded: 0, pending: 0,
             });
         }
@@ -281,8 +280,6 @@ export function computeCounters() {
         if (outcome === "accepted" || outcome === "preempted") c.accepted++;
         else if (outcome === "rejected") c.rejected++;
         else if (outcome === "ignored") c.ignored++;
-        else if (outcome === "agent_relevant") c.agentRelevant++;
-        else if (outcome === "agent_irrelevant") c.agentIrrelevant++;
         else if (outcome === "superseded") c.superseded++;
         else c.pending++;
     }
@@ -299,11 +296,8 @@ export function computeCounters() {
 export function acceptanceRate(counters, type, trigger, prior = { alpha: 1, beta: 1 }) {
     const c = counters.get(`${type}::${trigger}`);
     if (!c) return { rate: prior.alpha / (prior.alpha + prior.beta), n: 0 };
-    // Agent relevance judgments count, but at half the weight of a user click:
-    // the agent has full conversational context, yet it is predicting the
-    // user's reaction rather than observing it.
-    const accepts = c.accepted + 0.5 * c.agentRelevant;
-    const misses = c.rejected + c.ignored + 0.5 * c.agentIrrelevant;
+    const accepts = c.accepted;
+    const misses = c.rejected + c.ignored;
     const n = accepts + misses;
     const rate = (prior.alpha + accepts) / (prior.alpha + prior.beta + n);
     return { rate, n };
@@ -365,31 +359,11 @@ function realOutcomes(events) {
         // Historical logs contain auto-generated "ignored" rows from before
         // supersession was separated out. They are not observations.
         if (e.reason === "superseded_by_new_proposal") continue;
+        // Legacy rows from the removed `record_relevance` tool.
+        if (e.outcome === "agent_relevant" || e.outcome === "agent_irrelevant") continue;
         map.set(e.hintId, e.outcome);
     }
     return map;
-}
-
-/**
- * The agent is already acting as a reranker: the hook hands it each surviving
- * hint and it decides whether to surface it, using the full conversation as
- * context that keyword retrieval cannot see. That judgment was previously
- * discarded. Logging it turns a free, already-happening decision into training
- * signal, without waiting for the user to click anything.
- *
- * It is a genuine relevance judgment, so it feeds the posterior — but it is
- * tagged `source: "agent"` and counted separately from user clicks, which
- * remain the gold standard.
- */
-export function logAgentJudgment(hintId, relevant, reason) {
-    append({
-        kind: "outcome",
-        at: Date.now(),
-        hintId,
-        outcome: relevant ? "agent_relevant" : "agent_irrelevant",
-        source: "agent",
-        reason: reason ?? null,
-    });
 }
 
 export { realOutcomes };

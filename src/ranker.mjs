@@ -150,18 +150,17 @@ export function summarize(events) {
     for (const e of events) {
         if (e.kind !== "outcome") continue;
         if (e.reason === "superseded_by_new_proposal") continue; // bookkeeping, not a decision
+        if (e.outcome === "agent_relevant" || e.outcome === "agent_irrelevant") continue; // removed tool
         outcomes.set(e.hintId, e.outcome);
     }
     const superseded = new Set(events.filter((e) => e.kind === "superseded").map((e) => e.hintId));
 
-    let accepted = 0, rejected = 0, ignored = 0, unanswered = 0, agentRelevant = 0, agentIrrelevant = 0;
+    let accepted = 0, rejected = 0, ignored = 0, unanswered = 0;
     for (const i of impressions) {
         const o = outcomes.get(i.hintId);
         if (o === "accepted" || o === "preempted") accepted++;
         else if (o === "rejected") rejected++;
         else if (o === "ignored") ignored++;
-        else if (o === "agent_relevant") agentRelevant++;
-        else if (o === "agent_irrelevant") agentIrrelevant++;
         else unanswered++; // superseded or still pending — no signal either way
     }
     // Rates are over decisions the user actually made. Dividing by impressions
@@ -176,11 +175,6 @@ export function summarize(events) {
         accepted,
         rejected,
         ignored,
-        agentRelevant,
-        agentIrrelevant,
-        agentPrecision: (agentRelevant + agentIrrelevant)
-            ? agentRelevant / (agentRelevant + agentIrrelevant)
-            : null,
         unanswered,
         supersededCount: superseded.size,
         decided,

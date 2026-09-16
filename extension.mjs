@@ -32,7 +32,7 @@ import {
     logImpression, logSuppressed, logHoldout, logOutcome,
     readLog, saveProposal, loadProposal, supersedePending,
     computeCounters, acceptanceRate, loadSettings, saveSettings, TEST_MODE_GATE,
-    logAgentJudgment, queueAcceptedContext, takeAcceptedContext,
+    queueAcceptedContext, takeAcceptedContext,
     logInjection, readInjections, LOG_FILE, ARTIFACT_DIR,
 } from "./src/store.mjs";
 
@@ -52,17 +52,14 @@ function repositoryOf(workspacePath) {
 }
 
 // Restore a fixture database chosen in a previous run. Without this the
-// setting would silently revert to the real store on every extension reload,
-// and a test suite would look like it was passing against the fixture while
-// actually reading real sessions.
+// setting reverts to the real store on every reload, faking a passing suite.
 {
     const saved = loadSettings().sessionStorePath;
     if (saved && existsSync(saved)) setSessionStore(saved);
 }
 
-// Set once joinSession resolves. Used to post a short confirmation to the
-// timeline when a hint is accepted — otherwise Accept is completely silent
-// and the user has no way to tell the click did anything.
+// Set once joinSession resolves. Used to confirm an accepted hint in the
+// timeline, since Accept is otherwise completely silent.
 let session = null;
 
 function broadcast() {
@@ -164,29 +161,16 @@ function currentState(sessionId) {
     const proposal = loadProposal(sessionId);
     const events = readLog();
 
-    // The agent's own relevance judgment must NOT dismiss the card. It is a
-    // ranking signal, not a decision on the user's behalf — and because the
-    // agent records it within seconds of the prompt, treating it as a decision
-    // made cards vanish before the user could read them.
-    //
-    // Keeping the two separate also makes the interesting case visible:
-    // when the user accepts something the agent judged irrelevant, that
-    // disagreement is the most informative feedback available.
     const outcomes = new Map();
-    const agentJudgments = new Map();
     for (const e of events) {
         if (e.kind !== "outcome") continue;
-        if (e.outcome === "agent_relevant" || e.outcome === "agent_irrelevant") {
-            agentJudgments.set(e.hintId, { verdict: e.outcome, reason: e.reason ?? null });
-        } else {
-            outcomes.set(e.hintId, e.outcome);
-        }
+        if (e.outcome === "agent_relevant" || e.outcome === "agent_irrelevant") continue;
+        outcomes.set(e.hintId, e.outcome);
     }
 
     const hints = (proposal?.shown ?? []).map((h) => ({
         ...h,
         outcome: outcomes.get(h.hintId) ?? null,
-        agentJudgment: agentJudgments.get(h.hintId) ?? null,
     }));
     return {
         task: proposal?.task ?? "",
@@ -278,14 +262,8 @@ function deliverAcceptedHint(impression, sessionId) {
     const text = lines.join("\n");
     queueAcceptedContext(sessionId, text);
 
-    // Confirm in the timeline. `session.log` posts a status line rather than a
-    // chat turn, so it reads as system feedback instead of something the user
-    // appears to have typed.
-    //
-    // The wording says "will reach" on purpose: at click time the briefing is
-    // only queued. It is handed over via `additionalContext` on the next
-    // prompt, so claiming it was already sent would set the wrong expectation
-    // about when the agent can act on it.
+    // Confirm in the timeline as a status line, not a chat turn. "Will reach"
+    // is deliberate: the briefing is only queued until the next prompt.
     const label = ctx?.summary || action.sessionId || "a prior session";
     const kb = (text.length / 1024).toFixed(1);
     session?.log(
@@ -752,27 +730,6 @@ session = await joinSession({
                     },
                 },
                 {
-                    name: "record_relevance",
-                    description: "Record the agent's own relevance judgment for a hint it was offered. Call this every time you decide whether to surface a hint — especially when you decide NOT to. Counts at half the weight of a user click.",
-                    inputSchema: {
-                        type: "object",
-                        required: ["hintId", "relevant"],
-                        properties: {
-                            hintId: { type: "string" },
-                            relevant: { type: "boolean", description: "True if you surfaced it as genuinely relevant." },
-                            reason: { type: "string", description: "One short phrase, e.g. 'topically unrelated to the question'." },
-                        },
-                    },
-                    handler: async (ctx) => {
-                        const { hintId, relevant, reason } = ctx.input ?? {};
-                        const known = readLog().some((e) => e.kind === "impression" && e.hintId === hintId);
-                        if (!known) throw new CanvasError("unknown_hint", `No impression logged for hintId "${hintId}"`);
-                        logAgentJudgment(hintId, relevant, reason);
-                        broadcast();
-                        return { hintId, judgment: relevant ? "agent_relevant" : "agent_irrelevant", reason: reason ?? null };
-                    },
-                },
-                {
                     name: "configure",
                     description: "Read or change settings. `testMode: true` disables both cooldowns and the holdout so hints fire on every prompt — useful for seeing the system work, but the resulting volume is not representative.",
                     inputSchema: {
@@ -1034,13 +991,7 @@ session = await joinSession({
                 const parts = [];
 
                 // Briefings from hints the user accepted since the last prompt.
-                // Delivered here so they reach the agent without ever appearing
-                // in the chat as a message the user did not write.
-                //
-                // Only these are recorded in the audit trail. The hint
-                // notification is already visible to the user as the card
-                // itself, so logging it would just bury the one message that
-                // carries content they cannot otherwise see.
+                // Only these are logged; the card is already visible on its own.
                 for (const text of takeAcceptedContext(sessionId)) {
                     parts.push(text);
                     logInjection(sessionId, "accepted_briefing", text);
@@ -1048,18 +999,13 @@ session = await joinSession({
 
                 const hint = autoPropose(input?.prompt, sessionId, input?.workingDirectory);
                 if (hint) {
-                    // The panel no longer renders a hint card — that slot now
-                    // belongs to learned preferences — so this must not tell the
-                    // user to accept something they cannot see. The proposal is
-                    // still made and still logged, which keeps the retrieval
-                    // measurements alive without putting a dead affordance in
-                    // front of anyone.
+                    // No card for this: the slot belongs to learned
+                    // preferences now. Still proposed and logged for the data.
                     parts.push(
                         `[adaptive-hints] A prior session may be relevant (${hint.type}, `
                         + `score ${hint.finalScore.toFixed(2)}): ${hint.body} `
-                        + `There is no card for this — mention it only if it genuinely helps the user's `
-                        + `request, and record your judgment with the canvas action \`record_relevance\`: `
-                        + `{ hintId: "${hint.hintId}", relevant: true|false, reason: "<short phrase>" }.`,
+                        + `There is no card for this — mention it only if it genuinely helps `
+                        + `the user's request.`,
                     );
                 }
 

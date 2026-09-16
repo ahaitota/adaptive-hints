@@ -520,36 +520,25 @@ rather than leaving zeroed cooldowns silently in place.
 | `preempted` | You did the suggested thing without clicking | ✅ positive, weight 1 |
 | `rejected` | You clicked Reject | ✅ negative, weight 1 |
 | `ignored` | Explicitly recorded as ignored | ✅ negative, weight 1 |
-| `agent_relevant` | The agent chose to surface it | ✅ positive, **weight 0.5** |
-| `agent_irrelevant` | The agent chose *not* to surface it | ✅ negative, **weight 0.5** |
 | `superseded` | A newer hint replaced it before you answered | ❌ **no signal** |
 | `pending` | Still waiting | ❌ no signal |
 
-### The agent as reranker
+### Removed: the agent as reranker
 
-The agent is already doing LLM reranking, informally: the hook hands it each
-surviving hint and it decides whether to surface it, using the whole
-conversation as context that keyword retrieval cannot see. That judgment used
-to be discarded. `record_relevance` captures it.
+`record_relevance` let the agent log its own verdict on each hint it was
+offered, at half the weight of a user click. The reasoning was that the
+judgment was free and already being made, and that user clicks are the scarcest
+signal in the system.
 
-This matters because it is **free** — the decision is already being made — and
-because it does not require the user to click anything, which is the scarcest
-signal in the system. Weighted at 0.5 because the agent is *predicting* the
-user's reaction rather than observing it.
+It was removed with the rest of the retrieval UI. The judgment only mattered
+for ranking cards that are no longer shown, so it was collecting data nobody
+could act on. The 66 rows it wrote (65 irrelevant, 1 relevant) stay in the log
+as history and are skipped at read time.
 
-**An agent judgment never dismisses the card.** It is a ranking signal, not a
-decision made on the user's behalf. Because the agent records its verdict
-within seconds of the prompt, treating it as a decision made cards vanish
-before the user could read them — reported as *"the hint disappears in about
-10 seconds"*. The card now stays until the user clicks, and displays the
-agent's verdict and reasoning instead:
-
-> *Agent: not relevant — 74% match on generic terms; prior session was about
-> TRX merging*
-
-Showing it rather than hiding it also makes the most valuable case
-expressible: a user who accepts a hint the agent called irrelevant is
-disagreeing with the reranker, which is the sharpest feedback available.
+That ratio is itself the most useful thing it produced: given full
+conversational context, the agent rejected **98%** of what keyword retrieval
+scored highly enough to surface. That is a measurement of the retrieval half,
+not of the agent.
 
 **Supersession is deliberately not an outcome.** A hint scrolling out of the
 panel because a newer one arrived says nothing about what you thought — you may
