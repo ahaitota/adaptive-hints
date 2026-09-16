@@ -14,49 +14,71 @@ export function renderHtml() {
 <title>Adaptive hints</title>
 <style>
   :root { color-scheme: light dark; }
+  /* Everything below is sized in em/rem against this, so the whole panel
+     scales with its own width instead of staying at one fixed size while the
+     user resizes it. clamp keeps it readable at both extremes. */
+  html { font-size: clamp(12px, 1.15vw + 8px, 20px); }
   body {
     margin: 0;
-    padding: 16px;
+    padding: 1.15rem;
     background: var(--background-color-default, #0d1117);
     color: var(--text-color-default, #e6edf3);
     font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-    font-size: var(--text-body-medium, 14px);
-    line-height: var(--leading-body-medium, 20px);
+    font-size: 1rem;
+    line-height: 1.45;
   }
   h2 {
-    font-size: var(--text-title-small, 16px);
+    font-size: 1.15rem;
     font-weight: var(--font-weight-semibold, 600);
-    margin: 0 0 4px;
+    margin: 0 0 0.3rem;
   }
-  .sub { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 12px); margin-bottom: 16px; }
-  .row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+  .sub { color: var(--text-color-muted, #8b949e); font-size: 0.85rem; margin-bottom: 1.15rem; }
+  .row { display: flex; gap: 0.7rem; align-items: flex-start; margin-bottom: 0.85rem; }
   .bulb {
-    flex: 0 0 auto; width: 20px; text-align: center;
-    color: var(--true-color-yellow, #d29922); padding-top: 14px; font-size: 15px;
+    flex: 0 0 auto; width: 1.4em; text-align: center;
+    color: var(--true-color-yellow, #d29922); padding-top: 1em; font-size: 1.05rem;
   }
   .card {
     flex: 1 1 auto;
+    min-width: 0;
     border: 1px solid var(--border-color-default, #30363d);
-    border-radius: 8px;
-    padding: 12px 14px;
+    border-radius: 0.55rem;
+    padding: 0.85rem 1rem;
     background: var(--background-color-inset, rgba(255,255,255,0.02));
+    /* Paging through cards of different heights made the whole panel jump, and
+       the buttons moved under the cursor between clicks. A fixed height with
+       the actions pinned to the bottom keeps every card the same shape, so
+       only the words change. */
+    min-height: 11.5rem;
+    display: flex;
+    flex-direction: column;
   }
-  .card-head { display: flex; align-items: center; gap: 8px; }
-  .title { font-weight: var(--font-weight-semibold, 600); flex: 1 1 auto; }
-  .pager { display: flex; align-items: center; gap: 4px; font-size: var(--text-body-small, 12px); color: var(--text-color-muted, #8b949e); }
-  .body { color: var(--text-color-muted, #8b949e); margin: 6px 0 12px; }
+  .card-head { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+  .title {
+    font-weight: var(--font-weight-semibold, 600); flex: 1 1 12ch; min-width: 0;
+    overflow-wrap: anywhere;
+    /* Two lines, then ellipsis: a long preference must not push the buttons
+       around relative to a short one. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .pager { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--text-color-muted, #8b949e); }
+  .body {
+    color: var(--text-color-muted, #8b949e); margin: 0.45rem 0 0.85rem; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .actions { margin-top: auto; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .verdict {
-    font-size: 11px; margin: -6px 0 12px; padding: 5px 8px; border-radius: 6px;
+    font-size: 0.78rem; margin: -0.3rem 0 0.85rem; padding: 0.35rem 0.6rem; border-radius: 0.4rem;
     border: 1px solid var(--border-color-default, #30363d);
     color: var(--text-color-muted, #8b949e);
   }
   .verdict.yes { border-color: var(--true-color-green, #3fb950); }
   .verdict.no { border-color: var(--true-color-red-muted, rgba(248,81,73,0.4)); }
-  .actions { display: flex; align-items: center; gap: 8px; }
+  .actions { margin-top: auto; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .spacer { flex: 1 1 auto; }
   button {
-    font-family: inherit; font-size: var(--text-body-small, 12px);
-    border-radius: 6px; padding: 5px 12px; cursor: pointer;
+    font-family: inherit; font-size: 0.85rem;
+    border-radius: 0.4rem; padding: 0.35rem 0.8rem; cursor: pointer;
     border: 1px solid var(--border-color-default, #30363d);
     background: transparent; color: var(--text-color-default, #e6edf3);
   }
@@ -66,33 +88,23 @@ export function renderHtml() {
     background: var(--true-color-blue-muted, rgba(31,111,235,0.15));
   }
   button:disabled { opacity: .45; cursor: default; }
-  .why { margin-top: 10px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 8px; display: none; }
-  .why.open { display: block; }
-  .why table { width: 100%; border-collapse: collapse; font-size: var(--text-body-small, 12px); }
-  .why td { padding: 2px 0; color: var(--text-color-muted, #8b949e); }
-  .why td.v { text-align: right; color: var(--text-color-default, #e6edf3); font-family: var(--font-mono, monospace); }
-  .why tr.group td { padding-top: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; opacity: .65; }
-  .why tr.sub td:first-child { padding-left: 12px; }
-  .why tr.calc td { border-top: 1px solid var(--border-color-default, #30363d); padding-top: 4px; }
-  .why tr.calc td, .why tr.calc td.v { color: var(--text-color-default, #e6edf3); font-weight: var(--font-weight-semibold, 600); }
-  .why .formula { font-family: var(--font-mono, monospace); font-size: 10px; opacity: .6; }
   .empty {
     border: 1px dashed var(--border-color-default, #30363d);
-    border-radius: 8px; padding: 16px; color: var(--text-color-muted, #8b949e);
+    border-radius: 0.55rem; padding: 1.15rem; color: var(--text-color-muted, #8b949e);
   }
-  .sent { margin-top: 20px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 12px; }
+  .sent { margin-top: 1.4rem; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 0.85rem; }
   .sent > details > summary {
     cursor: pointer; color: var(--text-color-muted, #8b949e);
-    font-size: var(--text-body-small, 12px); list-style: none; user-select: none;
+    font-size: 0.85rem; list-style: none; user-select: none;
   }
   .sent > details > summary::-webkit-details-marker { display: none; }
-  .sent > details > summary::before { content: "\\25B8"; display: inline-block; margin-right: 6px; transition: transform .12s; }
+  .sent > details > summary::before { content: "\\25B8"; display: inline-block; margin-right: 0.4rem; transition: transform .12s; }
   .sent > details[open] > summary::before { transform: rotate(90deg); }
-  .inj { border: 1px solid var(--border-color-default, #30363d); border-radius: 6px; margin-top: 8px; }
+  .inj { border: 1px solid var(--border-color-default, #30363d); border-radius: 0.4rem; margin-top: 0.55rem; }
   .inj > summary {
-    cursor: pointer; padding: 6px 10px; list-style: none; user-select: none;
-    font-size: var(--text-body-small, 12px); color: var(--text-color-default, #e6edf3);
-    display: flex; gap: 8px; align-items: baseline;
+    cursor: pointer; padding: 0.4rem 0.7rem; list-style: none; user-select: none;
+    font-size: 0.85rem; color: var(--text-color-default, #e6edf3);
+    display: flex; gap: 0.55rem; align-items: baseline;
   }
   .inj > summary::-webkit-details-marker { display: none; }
   .inj > summary::before { content: "\\25B8"; color: var(--text-color-muted, #8b949e); transition: transform .12s; }
@@ -100,38 +112,36 @@ export function renderHtml() {
   .inj .when { color: var(--text-color-muted, #8b949e); }
   .inj .size { margin-left: auto; color: var(--text-color-muted, #8b949e); font-family: var(--font-mono, monospace); }
   .inj pre {
-    margin: 0; padding: 10px; border-top: 1px solid var(--border-color-default, #30363d);
+    margin: 0; padding: 0.7rem; border-top: 1px solid var(--border-color-default, #30363d);
     white-space: pre-wrap; word-break: break-word;
-    font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.45;
-    color: var(--text-color-muted, #8b949e); max-height: 340px; overflow: auto;
+    font-family: var(--font-mono, monospace); font-size: 0.78rem; line-height: 1.45;
+    color: var(--text-color-muted, #8b949e); max-height: 24rem; overflow: auto;
   }
   .kind {
-    display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 10px;
+    display: inline-block; font-size: 0.72rem; padding: 0 0.45rem; border-radius: 1rem;
     border: 1px solid var(--border-color-default, #30363d);
   }
   .badge {
-    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 1rem;
     border: 1px solid var(--border-color-default, #30363d); color: var(--text-color-muted, #8b949e);
-    margin-left: 6px; vertical-align: middle;
+    margin-left: 0.45rem; vertical-align: middle;
   }
-  .done { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 12px); padding: 4px 0; }
+  .done { color: var(--text-color-muted, #8b949e); font-size: 0.85rem; padding: 0.3rem 0; }
   .testbadge {
-    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 1rem;
     border: 1px solid var(--true-color-yellow, #d29922); color: var(--true-color-yellow, #d29922);
     margin-left: 6px; white-space: nowrap;
   }
-  .rules { margin-top: 14px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 10px; }
-  .rulecard { margin-bottom: 8px; }
-  .rulecard.off { opacity: .55; }
-  .rulecard .body { margin-bottom: 10px; font-size: var(--text-body-small, 12px); }
-  .rulecard .quote { font-style: italic; margin-top: 4px; opacity: .85; }
-  .rulecard .hint { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); }
-  .rulecard select {
-    font-size: 11px; background: transparent; color: var(--text-color-muted, #8b949e);
-    border: 1px solid var(--border-color-default, #30363d); border-radius: 6px; padding: 4px 6px;
+  .card.off { opacity: .55; }
+  .card .quote { font-style: italic; margin-top: 0.3rem; opacity: .85; }
+  .card .hint { color: var(--text-color-muted, #8b949e); font-size: 0.8rem; }
+  .card select {
+    font-size: 0.8rem; background: transparent; color: var(--text-color-muted, #8b949e);
+    border: 1px solid var(--border-color-default, #30363d); border-radius: 0.4rem; padding: 0.3rem 0.4rem;
+    max-width: 14ch;
   }
   .pill {
-    display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 10px;
+    display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.5rem; border-radius: 1rem;
     border: 1px solid var(--border-color-default, #30363d);
     color: var(--text-color-muted, #8b949e); white-space: nowrap;
   }
