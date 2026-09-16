@@ -330,6 +330,17 @@ levels are `info`, `warning`, `error` only; passing `debug` throws
 
 ## Panel
 
+The panel has two halves. Below the hint card sits **Learned preferences** —
+every rule with its stage, the sessions behind it, and your own words as
+evidence. Rules that are asking show the question with *Yes, please* and *Not
+this time*, and how many more yeses before they stop asking. Turned-off rules
+stay listed with a *restore* button.
+
+It used to end with a **Learning signal** table of accept rate, engagement and
+gate pass rate. Those counters describe hint types rather than preferences, so
+the table was removed; `summarize()` still computes them and the `stats` action
+still returns them for anyone reading offline.
+
 The card shows the hint; **"Why this?"** expands the full derivation, grouped
 to show the chain rather than a flat list:
 
