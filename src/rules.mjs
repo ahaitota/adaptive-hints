@@ -26,6 +26,16 @@ export const RULES_PATH = join(RULES_DIR, "rules.json");
 // Two is coincidence; three is a habit.
 export const SESSIONS_TO_CONFIRM = 3;
 
+// How many times an active rule must be accepted, with no rejection in
+// between, before it stops asking and simply applies itself.
+//
+// Confirmation by repetition proves the user MEANT it. It does not prove the
+// rule was written down correctly, or that firing it at this moment helps. So
+// a confirmed rule still shows a card and earns silence separately. One
+// rejection sends it back to asking, because a rule that is wrong once will be
+// wrong again and silence is exactly when that costs most.
+export const ACCEPTS_TO_TRUST = 5;
+
 // How many different repositories before a rule stops being repo-specific.
 export const REPOS_TO_GLOBALISE = 3;
 
@@ -111,6 +121,9 @@ export function addObservation(store, { ruleId, rule, when, scope = "global", re
             when: MOMENTS.includes(when) ? when : "session_start",
             scope,
             status: "candidate",
+            accepts: 0,
+            rejects: 0,
+            acceptStreak: 0,
             observations: [],
         };
         store.rules.push(target);
@@ -134,11 +147,55 @@ export function distinctRepositories(rule) {
 }
 
 /**
- * The only function that may change status.
+ * Record what the user did when a rule offered itself.
+ *
+ * This is the SECOND kind of evidence, and it answers a different question.
+ * Repetition across sessions shows the user meant it. Accepting the card shows
+ * the rule was written down correctly and fired at a useful moment — which
+ * repetition cannot show, because the user was never asked.
+ *
+ * A rejection resets the streak and pulls a silent rule back to asking. A rule
+ * that is wrong once will be wrong again, and silence is exactly when being
+ * wrong costs most.
+ */
+export function recordRuleOutcome(store, id, outcome, { acceptsToTrust = ACCEPTS_TO_TRUST } = {}) {
+    const r = store.rules.find((x) => x.id === id);
+    if (!r) throw new Error(`No such rule: ${id}`);
+    if (!["accepted", "rejected"].includes(outcome)) {
+        throw new Error(`outcome must be accepted or rejected, got ${outcome}`);
+    }
+    if (r.status === "candidate" || r.status === "retired") {
+        throw new Error(`Rule ${id} is ${r.status}; only active or trusted rules are offered`);
+    }
+
+    if (outcome === "accepted") {
+        r.accepts = (r.accepts ?? 0) + 1;
+        r.acceptStreak = (r.acceptStreak ?? 0) + 1;
+        if (r.status === "active" && r.acceptStreak >= acceptsToTrust) {
+            r.status = "trusted";
+            r.trustedAt = Date.now();
+        }
+    } else {
+        r.rejects = (r.rejects ?? 0) + 1;
+        r.acceptStreak = 0;
+        // Back to asking. Earning silence starts over.
+        if (r.status === "trusted") {
+            r.status = "active";
+            delete r.trustedAt;
+        }
+    }
+    return r;
+}
+
+/**
+ * The only function that may promote a candidate.
  *
  * Requires evidence from SESSIONS_TO_CONFIRM different sessions, so a single
  * session repeating itself — or an over-eager agent — can never promote a rule,
  * however many observations it writes.
+ *
+ * Promotion reaches "active", never "trusted": a newly confirmed rule still has
+ * to ask before it is allowed to act silently.
  */
 export function promote(store, { sessionsToConfirm = SESSIONS_TO_CONFIRM, reposToGlobalise = REPOS_TO_GLOBALISE } = {}) {
     const promoted = [];
@@ -159,12 +216,27 @@ export function promote(store, { sessionsToConfirm = SESSIONS_TO_CONFIRM, reposT
     return promoted;
 }
 
-/** Active rules that apply at this moment, in this repository. */
+/**
+ * Rules that apply at this moment, in this repository.
+ *
+ * Returns both stages. `status` tells the caller which is which: "trusted"
+ * applies silently, "active" must still offer a card the user can reject.
+ */
 export function rulesFor({ moment, repository } = {}, store = loadRules()) {
     return store.rules.filter((r) =>
-        r.status === "active"
+        (r.status === "active" || r.status === "trusted")
         && (!moment || r.when === moment)
         && (r.scope === "global" || !r.scope || r.scope === repository));
+}
+
+/** Rules allowed to act without asking. */
+export function silentRules(args, store) {
+    return rulesFor(args, store).filter((r) => r.status === "trusted");
+}
+
+/** Rules that must still show an accept/reject card. */
+export function askingRules(args, store) {
+    return rulesFor(args, store).filter((r) => r.status === "active");
 }
 
 /** Fold one rule into another, keeping all evidence. Used by the merge button. */
@@ -181,8 +253,27 @@ export function mergeRules(store, keepId, mergeId) {
 export function retireRule(store, id) {
     const r = store.rules.find((x) => x.id === id);
     if (!r) throw new Error(`No such rule: ${id}`);
+    // Status only, never deletion: the evidence is real conversations, and a
+    // mis-click should not destroy it. Found while testing the panel button —
+    // retiring was one click and there was no way back.
     r.status = "retired";
+    r.retiredAt = Date.now();
     return r;
+}
+
+/** Undo a retire. Returns the rule to candidate, and promote() re-decides. */
+export function restoreRule(store, id) {
+    const r = store.rules.find((x) => x.id === id);
+    if (!r) throw new Error(`No such rule: ${id}`);
+    r.status = "candidate";
+    delete r.retiredAt;
+    delete r.activatedAt;
+    return r;
+}
+
+/** Rules the user turned off, kept so they can be restored. */
+export function retiredRules(store = loadRules()) {
+    return store.rules.filter((r) => r.status === "retired");
 }
 
 /** The list shown to the agent so it can reuse an id instead of inventing one. */
@@ -195,7 +286,11 @@ export function ruleMenu(store = loadRules()) {
 
 /** Human-readable summary, for the panel and for rules.md. */
 export function describe(store = loadRules()) {
-    const active = store.rules.filter((r) => r.status === "active");
-    const candidates = store.rules.filter((r) => r.status === "candidate");
-    return { active, candidates, total: store.rules.length };
+    const by = (s) => store.rules.filter((r) => r.status === s);
+    return {
+        trusted: by("trusted"),
+        active: by("active"),
+        candidates: by("candidate"),
+        total: store.rules.length,
+    };
 }

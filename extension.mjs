@@ -24,7 +24,8 @@ import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, saveRules, addObservation, promote, rulesFor, ruleMenu,
-    mergeRules, retireRule, distinctSessions, distinctRepositories, describe, MOMENTS,
+    mergeRules, retireRule, restoreRule, retiredRules,
+    distinctSessions, distinctRepositories, describe, MOMENTS,
 } from "./src/rules.mjs";
 import {
     logImpression, logSuppressed, logHoldout, logOutcome,
@@ -112,6 +113,21 @@ function currentState(sessionId) {
         testMode: loadSettings().testMode === true,
         fixtureStore: sessionStorePath() !== DEFAULT_SESSION_STORE ? sessionStorePath() : null,
         injections: readInjections(sessionId),
+        rules: (() => {
+            const { trusted, active, candidates } = describe(loadRules());
+            const shape = (r) => ({
+                id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
+                sessions: distinctSessions(r), repositories: distinctRepositories(r),
+                accepts: r.accepts ?? 0, rejects: r.rejects ?? 0, streak: r.acceptStreak ?? 0,
+                quotes: r.observations.slice(-2).map((o) => o.quote),
+            });
+            return {
+                trusted: trusted.map(shape),
+                active: active.map(shape),
+                candidates: candidates.map(shape),
+                retired: retiredRules(loadRules()).map(shape),
+            };
+        })(),
         hints,
         stats: summarize(events),
     };
@@ -352,6 +368,47 @@ async function startServer(instanceId, sessionId) {
             return;
         }
 
+        // Merge and retire from the panel. Same body handling as /outcome: the
+        // chunks are concatenated before decoding, because decoding each chunk
+        // separately corrupts any multi-byte character split across a TCP
+        // boundary, and rule text is user-written so it will contain them.
+        if (url.pathname === "/rules" && req.method === "POST") {
+            const chunks = [];
+            let size = 0;
+            let aborted = false;
+            req.on("data", (c) => {
+                if (aborted) return;
+                const buf = Buffer.isBuffer(c) ? c : Buffer.from(c);
+                size += buf.length;
+                if (size > 64 * 1024) {
+                    aborted = true;
+                    res.writeHead(413, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: "body too large" }));
+                    req.destroy();
+                    return;
+                }
+                chunks.push(buf);
+            });
+            req.on("end", () => {
+                if (aborted) return;
+                try {
+                    const { merge, retire, restore } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+                    const store = loadRules();
+                    if (merge) mergeRules(store, merge.keep, merge.remove);
+                    if (retire) retireRule(store, retire);
+                    if (restore) restoreRule(store, restore);
+                    saveRules(store);
+                    broadcast();
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ ok: true }));
+                } catch (err) {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ error: String(err?.message ?? err) }));
+                }
+            });
+            return;
+        }
+
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderHtml());
     });
@@ -526,13 +583,18 @@ session = await joinSession({
                         if (merge) mergeRules(store, merge.keep, merge.remove);
                         if (retire) retireRule(store, retire);
                         if (merge || retire) { saveRules(store); broadcast(); }
-                        const { active, candidates } = describe(store);
+                        const { trusted, active, candidates } = describe(store);
                         const shape = (r) => ({
-                            id: r.id, rule: r.rule, when: r.when, scope: r.scope,
+                            id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
                             sessions: distinctSessions(r), repositories: distinctRepositories(r),
+                            accepts: r.accepts ?? 0, rejects: r.rejects ?? 0,
                             quotes: r.observations.slice(-3).map((o) => o.quote),
                         });
-                        return { active: active.map(shape), candidates: candidates.map(shape) };
+                        return {
+                            trusted: trusted.map(shape),
+                            active: active.map(shape),
+                            candidates: candidates.map(shape),
+                        };
                     },
                 },
                 {

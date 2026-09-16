@@ -10,7 +10,7 @@
 # Verified to contain real repository names and real file paths.
 artifacts/
 
-# Generated test databases — about 23 MB, rebuilt with `node test/build.mjs`.
+# Generated test databases — about 23 MB, rebuilt with `node local/build.mjs`.
 # Committing them would mean large binary diffs on every regeneration, for data
 # that is reproducible byte for byte from the source files.
 #
@@ -18,9 +18,19 @@ artifacts/
 # safety net, because renaming this folder once already silently un-ignored
 # 23 MB of databases.
 test/db/
+local/db/
 *.db
 *.db-shm
 *.db-wal
+
+# Retrieval experiments and their fixtures — kept on this machine, not shipped.
+#
+# These measure the keyword-retrieval system that preference learning replaces:
+# the Group A suite, the fixture generators, and the read-only probes that were
+# run against the real session store. They stay because the measurements are
+# the reasoning behind decisions recorded elsewhere, and because some of them
+# read personal session data.
+local/
 
 # Planning and evaluation notes — kept local.
 #

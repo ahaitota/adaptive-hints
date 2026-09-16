@@ -7,7 +7,8 @@
 //   node rules.test.mjs
 
 import {
-    addObservation, promote, rulesFor, mergeRules, retireRule,
+    addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
+    recordRuleOutcome, silentRules, askingRules,
     distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu,
 } from "../src/rules.mjs";
 import { join } from "node:path";
@@ -116,6 +117,71 @@ console.log("=".repeat(62));
     })());
 }
 
+// --- Three stages: confirmed, then asking, then silent --------------------
+//
+// Repetition proves the user MEANT it. It cannot prove the rule was written
+// down correctly or fires at a useful moment, because the user was never
+// asked. So a confirmed rule still shows a card, and earns silence separately.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Plain language", when: "session_start", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+    check("three sessions reach 'active', NOT silent", r.status === "active", `status=${r.status}`);
+    check("an active rule still asks", askingRules({}, s).length === 1 && silentRules({}, s).length === 0);
+
+    for (let i = 0; i < 4; i++) recordRuleOutcome(s, r.id, "accepted");
+    check("four accepts is not yet enough to go silent", r.status === "active", `streak=${r.acceptStreak}`);
+    recordRuleOutcome(s, r.id, "accepted");
+    check("the fifth accept earns silence", r.status === "trusted");
+    check("a trusted rule stops asking",
+        silentRules({}, s).length === 1 && askingRules({}, s).length === 0);
+
+    recordRuleOutcome(s, r.id, "rejected");
+    check("one rejection sends a silent rule back to asking",
+        r.status === "active" && r.acceptStreak === 0, `status=${r.status}`);
+    check("...and it must earn silence all over again", (() => {
+        for (let i = 0; i < 4; i++) recordRuleOutcome(s, r.id, "accepted");
+        return r.status === "active";
+    })());
+}
+
+// --- A rejection part-way through resets the streak ------------------------
+{
+    const s = store();
+    const r = addObservation(s, { rule: "X", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "accepted");
+    check("accepts must be CONSECUTIVE to earn silence",
+        r.status === "active" && r.accepts === 6, `accepts=${r.accepts} streak=${r.acceptStreak}`);
+    recordRuleOutcome(s, r.id, "accepted");
+    check("five in a row after the rejection does earn it", r.status === "trusted");
+}
+
+// --- Outcomes are only accepted for rules that were actually offered -------
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Unconfirmed", sessionId: "A", quote: "q" });
+    const threw = (fn) => { try { fn(); return false; } catch { return true; } };
+    check("a candidate cannot be accepted — it was never shown",
+        threw(() => recordRuleOutcome(s, r.id, "accepted")));
+    check("an unknown outcome is refused", (() => {
+        addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+        addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+        promote(s);
+        return threw(() => recordRuleOutcome(s, r.id, "maybe"));
+    })());
+}
+
 // --- Merge keeps the evidence ----------------------------------------------
 {
     const s = store();
@@ -140,6 +206,10 @@ console.log("=".repeat(62));
     check("a retired rule stops firing", rulesFor({ moment: "session_start" }, s).length === 0);
     check("a retired rule is not re-promoted", promote(s).length === 0 && r.status === "retired");
     check("a retired rule is hidden from the agent's menu", !ruleMenu(s).includes(r.id));
+    check("a retired rule can be restored", (() => {
+        restoreRule(s, r.id);
+        return r.status === "candidate" && promote(s).length === 1;
+    })(), "retire must be undoable — the evidence is real conversations");
 }
 
 // --- Bad input is refused ---------------------------------------------------

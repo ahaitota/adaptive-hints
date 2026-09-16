@@ -124,6 +124,29 @@ export function renderHtml() {
     border: 1px solid var(--true-color-yellow, #d29922); color: var(--true-color-yellow, #d29922);
     margin-left: 6px; white-space: nowrap;
   }
+  .rules { margin-top: 14px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 10px; }
+  .rule { padding: 6px 0; border-bottom: 1px solid var(--border-color-muted, #21262d); }
+  .rule:last-child { border-bottom: 0; }
+  .rule .txt { font-size: var(--text-body-medium, 13px); }
+  .rule .meta {
+    color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); margin-top: 2px;
+  }
+  .rule .quote {
+    color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px);
+    font-style: italic; margin-top: 2px;
+  }
+  .pill {
+    display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px;
+    border: 1px solid var(--border-color-default, #30363d); margin-right: 5px;
+  }
+  .pill.on { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
+  .pill.asking { border-color: var(--true-color-blue, #58a6ff); color: var(--true-color-blue, #58a6ff); }
+  .rule button {
+    font-size: 10px; padding: 1px 6px; margin-left: 4px; cursor: pointer;
+    background: transparent; color: var(--text-color-muted, #8b949e);
+    border: 1px solid var(--border-color-default, #30363d); border-radius: 5px;
+  }
+  .rule button:hover { color: var(--text-color-default, #e6edf3); }
 </style>
 </head>
 <body>
@@ -135,6 +158,10 @@ export function renderHtml() {
     <summary id="sentsum">Accepted context sent to the agent</summary>
     <div id="sentlist"></div>
   </details>
+</div>
+<div class="rules">
+  <div class="sub" style="margin-bottom:6px">Learned preferences</div>
+  <div id="ruleslist"></div>
 </div>
 <div class="stats">
   <div class="sub" style="margin-bottom:6px">Learning signal</div>
@@ -174,6 +201,74 @@ function renderSent() {
       </summary>
       <pre>\${esc(i.text)}</pre>
     </details>\`).join("");
+}
+
+function renderRules() {
+  const rules = state.rules || { trusted: [], active: [], candidates: [], retired: [] };
+  const all = [...(rules.trusted || []), ...rules.active, ...rules.candidates];
+  const gone = rules.retired || [];
+  if (!all.length && !gone.length) {
+    $("ruleslist").innerHTML =
+      '<div class="done">Nothing learned yet. A preference becomes active once three '
+      + 'different sessions have stated it, then applies silently after five accepts.</div>';
+    return;
+  }
+  // Merge needs a target, so the select lists every OTHER rule.
+  const options = (id) => all.filter(r => r.id !== id)
+    .map(r => \`<option value="\${r.id}">\${esc(r.rule.slice(0, 34))}</option>\`).join("");
+
+  // Three stages, and the pill says which: still gathering evidence, asking
+  // each time, or trusted enough to act without asking.
+  const badge = (r) => {
+    if (r.status === "trusted") return '<span class="pill on">silent</span>';
+    if (r.status === "active") return \`<span class="pill asking">asking \${r.streak || 0}/5</span>\`;
+    return \`<span class="pill">\${r.sessions}/3 sessions</span>\`;
+  };
+
+  $("ruleslist").innerHTML = all.map(r => \`
+    <div class="rule" data-id="\${r.id}">
+      <div class="txt">\${badge(r)} \${esc(r.rule)}</div>
+      <div class="meta">
+        when: \${esc(r.when)} · scope: \${esc(r.scope)} ·
+        \${r.sessions} session\${r.sessions === 1 ? "" : "s"}\${r.accepts ? \` · \${r.accepts} accepted\` : ""}\${r.rejects ? \`, \${r.rejects} rejected\` : ""}
+        <button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "discard" : "turn off"}</button>
+        \${all.length > 1 ? \`<select data-merge="\${r.id}">
+          <option value="">merge into…</option>\${options(r.id)}
+        </select>\` : ""}
+      </div>
+      \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
+    </div>\`).join("")
+  // Turned-off rules are kept and shown, not deleted: the evidence behind them
+  // is real conversation, and a mis-click should be recoverable.
+  + gone.map(r => \`
+    <div class="rule" data-id="\${r.id}" style="opacity:.55">
+      <div class="txt"><span class="pill">off</span> \${esc(r.rule)}</div>
+      <div class="meta">
+        \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept
+        <button data-act="restore" data-id="\${r.id}">restore</button>
+      </div>
+    </div>\`).join("");
+
+  const post = async (body) => {
+    await fetch("/rules", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    load();
+  };
+  $("ruleslist").querySelectorAll('button[data-act="retire"]').forEach(b => {
+    b.onclick = () => { b.disabled = true; post({ retire: b.dataset.id }); };
+  });
+  $("ruleslist").querySelectorAll('button[data-act="restore"]').forEach(b => {
+    b.onclick = () => { b.disabled = true; post({ restore: b.dataset.id }); };
+  });
+  $("ruleslist").querySelectorAll("select[data-merge]").forEach(s => {
+    s.onchange = () => {
+      if (!s.value) return;
+      // The chosen rule is kept; this one folds into it, evidence and all.
+      post({ merge: { keep: s.value, remove: s.dataset.merge } });
+    };
+  });
 }
 
 function render() {
@@ -296,6 +391,7 @@ function renderInner() {
   const s = state.stats || {};
   const noSignal = !s.decided;
   renderSent();
+  renderRules();
   $("stats").innerHTML = \`
     <tr><td>accept rate\${noSignal ? " <i>(no clicks yet)</i>" : ""}</td><td class="v">\${pct(s.acceptRate)}</td></tr>
     <tr><td>ignore rate</td><td class="v">\${pct(s.ignoreRate)}</td></tr>
