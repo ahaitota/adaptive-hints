@@ -121,36 +121,22 @@ export function renderHtml() {
     margin-left: 6px; white-space: nowrap;
   }
   .rules { margin-top: 14px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 10px; }
-  .rule { padding: 6px 0; border-bottom: 1px solid var(--border-color-muted, #21262d); }
-  .rule:last-child { border-bottom: 0; }
-  .rule .txt { font-size: var(--text-body-medium, 13px); }
-  .rule .meta {
-    color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); margin-top: 2px;
-  }
-  .rule .quote {
-    color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px);
-    font-style: italic; margin-top: 2px;
+  .rulecard { margin-bottom: 8px; }
+  .rulecard.off { opacity: .55; }
+  .rulecard .body { margin-bottom: 10px; font-size: var(--text-body-small, 12px); }
+  .rulecard .quote { font-style: italic; margin-top: 4px; opacity: .85; }
+  .rulecard .hint { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); }
+  .rulecard select {
+    font-size: 11px; background: transparent; color: var(--text-color-muted, #8b949e);
+    border: 1px solid var(--border-color-default, #30363d); border-radius: 6px; padding: 4px 6px;
   }
   .pill {
-    display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px;
-    border: 1px solid var(--border-color-default, #30363d); margin-right: 5px;
+    display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 10px;
+    border: 1px solid var(--border-color-default, #30363d);
+    color: var(--text-color-muted, #8b949e); white-space: nowrap;
   }
   .pill.on { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
   .pill.asking { border-color: var(--true-color-blue, #58a6ff); color: var(--true-color-blue, #58a6ff); }
-  .rule button {
-    font-size: 10px; padding: 1px 6px; margin-left: 4px; cursor: pointer;
-    background: transparent; color: var(--text-color-muted, #8b949e);
-    border: 1px solid var(--border-color-default, #30363d); border-radius: 5px;
-  }
-  .rule button:hover { color: var(--text-color-default, #e6edf3); }
-  .ruleact { margin-top: 5px; }
-  .ruleact button {
-    font-size: 11px; padding: 2px 8px; margin: 0 4px 0 0; cursor: pointer;
-    background: transparent; color: var(--text-color-default, #e6edf3);
-    border: 1px solid var(--border-color-default, #30363d); border-radius: 5px;
-  }
-  .ruleact button.ok { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
-  .ruleact .hint { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); }
 </style>
 </head>
 <body>
@@ -226,32 +212,43 @@ function renderRules() {
   };
 
   $("ruleslist").innerHTML = all.map(r => \`
-    <div class="rule" data-id="\${r.id}">
-      <div class="txt">\${badge(r)} \${esc(r.status === "active" && r.ask ? r.ask : r.rule)}</div>
-      <div class="meta">
+    <div class="card rulecard" data-id="\${r.id}">
+      <div class="card-head">
+        <div class="title">\${esc(r.ask || r.rule)}</div>
+        \${badge(r)}
+      </div>
+      <div class="body">
+        \${r.ask ? \`as a rule: \${esc(r.rule)}<br>\` : ""}
         when: \${esc(r.when)} · scope: \${esc(r.scope)} ·
         \${r.sessions} session\${r.sessions === 1 ? "" : "s"}\${r.accepts ? \` · \${r.accepts} accepted\` : ""}\${r.rejects ? \`, \${r.rejects} rejected\` : ""}
-        <button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "discard" : "turn off"}</button>
+        \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
+      </div>
+      <div class="actions">
+        \${r.status === "active" ? \`
+          <button class="primary" data-act="accept" data-id="\${r.id}">Yes, please</button>
+          <button data-act="reject" data-id="\${r.id}">Not this time</button>
+          <span class="hint">\${5 - (r.streak || 0)} more to stop asking</span>\` : ""}
+        \${r.status === "trusted" ? '<span class="hint">Applied without asking.</span>' : ""}
+        \${r.status === "candidate" ? \`<span class="hint">Needs \${3 - r.sessions} more session\${3 - r.sessions === 1 ? "" : "s"} before it is offered.</span>\` : ""}
+        <div class="spacer"></div>
         \${all.length > 1 ? \`<select data-merge="\${r.id}">
           <option value="">merge into…</option>\${options(r.id)}
         </select>\` : ""}
+        <button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>
       </div>
-      \${r.status === "active" && r.ask ? \`<div class="meta">as a rule: \${esc(r.rule)}</div>\` : ""}
-      \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
-      \${r.status === "active" ? \`<div class="ruleact">
-        <button class="ok" data-act="accept" data-id="\${r.id}">Yes, please</button>
-        <button data-act="reject" data-id="\${r.id}">Not this time</button>
-        <span class="hint">\${5 - (r.streak || 0)} more yes\${5 - (r.streak || 0) === 1 ? "" : "es"} and it stops asking</span>
-      </div>\` : ""}
     </div>\`).join("")
   // Turned-off rules are kept and shown, not deleted: the evidence behind them
   // is real conversation, and a mis-click should be recoverable.
   + gone.map(r => \`
-    <div class="rule" data-id="\${r.id}" style="opacity:.55">
-      <div class="txt"><span class="pill">off</span> \${esc(r.rule)}</div>
-      <div class="meta">
-        \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept
-        <button data-act="restore" data-id="\${r.id}">restore</button>
+    <div class="card rulecard off" data-id="\${r.id}">
+      <div class="card-head">
+        <div class="title">\${esc(r.ask || r.rule)}</div>
+        <span class="pill">off</span>
+      </div>
+      <div class="body">\${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept</div>
+      <div class="actions">
+        <div class="spacer"></div>
+        <button data-act="restore" data-id="\${r.id}">Restore</button>
       </div>
     </div>\`).join("");
 
