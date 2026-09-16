@@ -86,6 +86,13 @@ off left a dead card in the deck, and *turn off* read almost the same as
 A preference carries the moment it belongs to, because the right moment is part
 of the preference: *ask before committing* is useless after the commit.
 
+It is said **once per moment per session**. Every edit fires `before_changes`
+and `after_changes`, so repeating on each one meant the same lines arriving over
+and over — and it filled the injection log, which keeps only the last ten
+entries, pushing out anything worth reading. The same rule at a *different*
+moment is still delivered there: a preference about committing must reach
+commit time even if it was mentioned at session start.
+
 | Moment | Fires when |
 | --- | --- |
 | `session_start` | the session begins |
@@ -386,6 +393,12 @@ preference is offered again in the next one — which is where the streak is
 meant to build. That is not only so the click visibly does something: without
 it, reloading the panel offered the same card again and answering twice
 inflated the streak.
+
+Answering also records **what it did**, in the list of what reached the agent.
+Accepting a preference sends no new text — it is already being applied — so the
+click showed up nowhere at all, and looked ignored. The entry now says the
+preference is being followed, or that it will be offered again next session, or
+that it has been declined enough times to stop offering itself.
 
 Merging duplicates is **not** on the card. A dropdown there asked the user to
 spot near-identical wordings and think about how preferences are stored;
