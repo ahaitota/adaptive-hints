@@ -125,8 +125,14 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     if (ruleId && !target) throw new Error(`No such rule: ${ruleId}`);
 
     // Same sentence written again: treat it as the same rule.
+    //
+    // Retired rules are included deliberately. Excluding them meant that
+    // turning a preference off and then stating it again created a SECOND rule
+    // with identical text, which promoted itself and quietly undid the user's
+    // decision. Attaching here keeps the evidence together and leaves the rule
+    // off until the user restores it.
     if (!target && rule) {
-        target = store.rules.find((r) => r.status !== "retired" && sameRule(r.rule, rule)) || null;
+        target = store.rules.find((r) => sameRule(r.rule, rule)) || null;
     }
 
     if (!target) {

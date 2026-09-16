@@ -244,6 +244,32 @@ console.log("=".repeat(62));
     })());
 }
 
+// --- Turning a preference off is a decision, and it sticks ----------------
+//
+// Restoring must not demand three fresh mentions — the evidence never went
+// away — and re-stating a preference while it is off must not create a second
+// rule that promotes itself and quietly overrides the user.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Test rule", ask: "Do X?", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+    retireRule(s, r.id);
+    check("turning off keeps every observation", r.observations.length === 3);
+    restoreRule(s, r.id);
+    promote(s);
+    check("restoring brings it straight back, no new mentions needed", r.status === "active");
+
+    retireRule(s, r.id);
+    const again = addObservation(s, { rule: "Test rule", sessionId: "D", quote: "q" });
+    check("re-stating it while off does not create a second rule",
+        again.id === r.id && s.rules.length === 1, `${s.rules.length} rules`);
+    promote(s);
+    check("...and it stays off until the user restores it", r.status === "retired", `status=${r.status}`);
+    check("the new evidence is still recorded", r.observations.length === 4);
+}
+
 // --- Merge keeps the evidence ----------------------------------------------
 {
     const s = store();

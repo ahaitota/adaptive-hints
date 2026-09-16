@@ -304,22 +304,16 @@ function renderInner() {
           ? '<div class="verdict yes">Applied automatically</div>'
           : r.status === "retired" ? '<div class="verdict">Turned off</div>' : ""}
         <div class="actions">
-          \${deck.length > 1 && r.status !== "retired" ? \`<select data-merge="\${r.id}"
-            title="These two mean the same thing — fold this card into that one, keeping both sets of evidence">
-            <option value="">merge into…</option>\${
-              deck.filter(o => o.id !== r.id && o.status !== "retired")
-                  .map(o => \`<option value="\${o.id}">\${esc((o.rule || "").slice(0, 30))}</option>\`).join("")
-            }</select>\` : ""}
           <div class="spacer"></div>
           \${r.status === "active" ? \`
             <button class="primary" data-act="accept" data-id="\${r.id}"
-              title="Keep working this way">Yes, please</button>
+              title="Keep working this way">Accept</button>
             <button data-act="reject" data-id="\${r.id}"
-              title="Skip it this time">Not this time</button>\` : ""}
+              title="Skip it this time">Decline</button>\` : ""}
           \${r.status === "retired"
             ? \`<button data-act="restore" data-id="\${r.id}" title="Use this preference again">Restore</button>\`
             : \`<button data-act="retire" data-id="\${r.id}"
-                title="Stop using this preference. Its evidence is kept and it can be restored."
+                title="Stop using this preference. Nothing is lost — it can be restored."
               >Turn off</button>\`}
         </div>
       </div>\`;
@@ -345,10 +339,6 @@ function renderInner() {
       if (b.dataset.act === "retire") return post({ retire: id });
       if (b.dataset.act === "restore") return post({ restore: id });
     });
-    const sel = el.querySelector("select[data-merge]");
-    if (sel) sel.onchange = () => {
-      if (sel.value) post({ merge: { keep: sel.value, remove: sel.dataset.merge } });
-    };
   }
 
   renderSent();

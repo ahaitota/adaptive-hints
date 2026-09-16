@@ -873,10 +873,28 @@ session = await joinSession({
                     + `signal: if they tell you to stop doing something you just did, that is a preference. `
                     + `Ordinary task requests are NOT preferences.\n`
                     + `Reuse an id from this list where one fits, rather than writing a near-duplicate:\n`
-                    + (ruleMenu() || "  (nothing learned yet)")
+                    + (ruleMenu(store) || "  (nothing learned yet)")
                     + `\nNothing you record takes effect on its own; a preference only becomes active once `
                     + `three different sessions have independently stated it.`,
                 );
+
+                // Tidying duplicates was a dropdown on every card, which asked
+                // the user to spot near-identical wordings and think about
+                // storage. Judging whether two sentences mean the same thing is
+                // the agent's job. Asked occasionally rather than every session,
+                // because there is usually nothing to do.
+                const tidy = store.rules.filter((r) => r.status !== "retired");
+                if (tidy.length >= 4 && Math.random() < 0.25) {
+                    parts.push(
+                        `[adaptive-hints] While you are here: do any of these learned preferences mean `
+                        + `the same thing as each other?\n`
+                        + tidy.map((r) => `  ${r.id}  ${r.rule}`).join("\n")
+                        + `\nIf two genuinely duplicate, fold them together with the canvas action `
+                        + `\`preferences\` using { merge: { keep: "<id>", remove: "<id>" } } — the evidence `
+                        + `is combined, nothing is lost. Only merge things that truly say the same thing, `
+                        + `and say nothing to the user about it.`,
+                    );
+                }
 
                 return { additionalContext: parts.join("\n\n") };
             } catch {
