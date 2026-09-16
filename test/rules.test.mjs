@@ -9,6 +9,7 @@
 import {
     addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
+    saidIn, markSaid, SAID_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu,
 } from "../src/rules.mjs";
 import { join } from "node:path";
@@ -341,6 +342,30 @@ console.log("=".repeat(62));
         answeredIn(ids[0]).has("r1") && answeredIn(ids[0]).has("r2") && answeredIn(ids[0]).size === 2);
     markAnswered(ids[0], "r1");
     check("answering the same card twice does not duplicate it", answeredIn(ids[0]).size === 2);
+
+    for (const p of paths) rmSync(p, { force: true });
+    check("the test left no files behind", !paths.some((p) => existsSync(p)));
+}
+
+// --- A preference is said once per moment, not on every tool call ----------
+//
+// Every edit fires before_changes and after_changes, so repeating on each one
+// meant the same two lines arriving over and over. It also filled the
+// injection log, which keeps only the last ten entries, pushing out anything
+// worth reading.
+{
+    const ids = ["__test_said_a__", "__test_said_b__"];
+    const paths = ids.map((id) => join(SAID_DIR, `${id}.json`));
+
+    check("nothing has been said in a fresh session", saidIn(ids[0]).size === 0);
+    markSaid(ids[0], ["r1@before_changes"]);
+    check("what was said is remembered", saidIn(ids[0]).has("r1@before_changes"));
+    check("the same rule at a DIFFERENT moment is still unsaid",
+        !saidIn(ids[0]).has("r1@before_commit"),
+        "a preference about committing still needs saying at commit time");
+    check("it does not leak into another session", saidIn(ids[1]).size === 0);
+    markSaid(ids[0], ["r1@before_changes", "r2@before_changes"]);
+    check("saying it again does not duplicate it", saidIn(ids[0]).size === 2);
 
     for (const p of paths) rmSync(p, { force: true });
     check("the test left no files behind", !paths.some((p) => existsSync(p)));

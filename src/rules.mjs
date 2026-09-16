@@ -375,6 +375,42 @@ export function markAnswered(sessionId, ruleId) {
     return seen;
 }
 
+// --- What has already been said to the agent in this conversation ----------
+//
+// Every edit fires before_changes and after_changes, so repeating a preference
+// on each one meant the same two lines arriving over and over — noise, and the
+// exact failure this project exists to avoid. It also filled the injection log,
+// which keeps only the last ten entries, pushing out anything worth reading.
+//
+// A preference is said once per moment per session. The agent does not need
+// telling twice in one conversation.
+const SAID_DIR = join(RULES_DIR, "said");
+
+function saidPath(sessionId) {
+    const safe = String(sessionId || "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
+    return join(SAID_DIR, `${safe}.json`);
+}
+
+export function saidIn(sessionId) {
+    const p = saidPath(sessionId);
+    if (!existsSync(p)) return new Set();
+    try {
+        return new Set(JSON.parse(readFileSync(p, "utf8")));
+    } catch {
+        return new Set();
+    }
+}
+
+export function markSaid(sessionId, keys) {
+    mkdirSync(SAID_DIR, { recursive: true });
+    const seen = saidIn(sessionId);
+    for (const k of keys) seen.add(k);
+    writeFileSync(saidPath(sessionId), JSON.stringify([...seen]), "utf8");
+    return seen;
+}
+
+export { SAID_DIR };
+
 /** The list shown to the agent so it can reuse an id instead of inventing one. */
 export function ruleMenu(store = loadRules()) {
     return store.rules

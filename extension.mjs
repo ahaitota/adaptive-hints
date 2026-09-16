@@ -25,7 +25,7 @@ import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, saveRules, addObservation, promote, ruleMenu,
     mergeRules, retireRule, restoreRule, recordRuleOutcome,
-    silentRules, askingRules, answeredIn, markAnswered,
+    silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
     distinctSessions, distinctRepositories, describe, MOMENTS,
 } from "./src/rules.mjs";
 import {
@@ -128,14 +128,22 @@ function momentForTool(toolName, toolArgs, phase) {
 /**
  * Deliver the preferences that belong to this moment.
  *
+ * Said once per moment per session. Every edit fires before_changes and
+ * after_changes, so repeating on each one meant the same lines arriving over
+ * and over — noise, and it filled the injection log, which keeps only the last
+ * ten entries.
+ *
  * Trusted ones are stated as instructions; ones still asking are mentioned as
  * pending so the agent follows them now and the user can answer in the panel.
- * Returns null when there is nothing to say, so the hook stays silent.
+ * Returns null when there is nothing new to say, so the hook stays silent.
  */
-function contextForMoment(moment, repository) {
+function contextForMoment(moment, repository, sessionId) {
     const store = syncedRules();
-    const silent = silentRules({ moment, repository }, store);
-    const asking = askingRules({ moment, repository }, store);
+    const already = saidIn(sessionId);
+    const fresh = (list) => list.filter((r) => !already.has(`${r.id}@${moment}`));
+
+    const silent = fresh(silentRules({ moment, repository }, store));
+    const asking = fresh(askingRules({ moment, repository }, store));
     if (!silent.length && !asking.length) return null;
 
     const lines = [];
@@ -147,6 +155,7 @@ function contextForMoment(moment, repository) {
         lines.push(`[adaptive-hints] Waiting for approval in the panel, follow for now:\n`
             + asking.map((r) => `  - ${r.rule}`).join("\n"));
     }
+    markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@${moment}`));
     return lines.join("\n\n");
 }
 
@@ -475,11 +484,30 @@ async function startServer(instanceId, sessionId) {
                     if (retire) retireRule(store, retire);
                     if (restore) restoreRule(store, restore);
                     if (outcome) {
-                        recordRuleOutcome(store, outcome.id, outcome.outcome);
+                        const r = recordRuleOutcome(store, outcome.id, outcome.outcome);
                         // Take it off the deck for the rest of this
                         // conversation, so the click visibly does something and
                         // a reload cannot answer the same card twice.
                         markAnswered(sessionId, outcome.id);
+                        // ...and leave a trace the user can read. Accepting a
+                        // preference sends no new text to the agent — it is
+                        // already being applied — so without this the click
+                        // showed up nowhere at all.
+                        logInjection(
+                            sessionId,
+                            outcome.outcome === "accepted" ? "preference_accepted" : "preference_declined",
+                            outcome.outcome === "accepted"
+                                ? `You accepted: ${r.rule}\n\n`
+                                  + `It is being followed from now on in this session.`
+                                  + (r.status === "trusted"
+                                      ? ` It has now been accepted enough times that it will stop asking.`
+                                      : ``)
+                                : `You declined: ${r.rule}\n\n`
+                                  + (r.status === "declined"
+                                      ? `Declined enough times that it will stop offering itself. `
+                                        + `Say it again any time to bring it back.`
+                                      : `It will be offered again next session.`),
+                        );
                     }
                     saveRules(store);
                     broadcast();
@@ -974,7 +1002,7 @@ session = await joinSession({
             try {
                 const moment = momentForTool(input?.toolName, input?.toolArgs, "pre");
                 if (!moment) return;
-                const text = contextForMoment(moment, repositoryOf(session?.workspacePath));
+                const text = contextForMoment(moment, repositoryOf(session?.workspacePath), invocation?.sessionId);
                 if (!text) return;
                 logInjection(invocation?.sessionId, `rules_${moment}`, text);
                 return { additionalContext: text };
@@ -988,7 +1016,7 @@ session = await joinSession({
             try {
                 const moment = momentForTool(input?.toolName, input?.toolArgs, "post");
                 if (!moment) return;
-                const text = contextForMoment(moment, repositoryOf(session?.workspacePath));
+                const text = contextForMoment(moment, repositoryOf(session?.workspacePath), invocation?.sessionId);
                 if (!text) return;
                 logInjection(invocation?.sessionId, `rules_${moment}`, text);
                 return { additionalContext: text };
