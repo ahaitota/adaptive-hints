@@ -114,6 +114,49 @@ hint 8% of the time on purpose (13 holdouts so far), which is the right
 experiment design — but no outcome is recorded afterwards, so the arm proves
 nothing yet.
 
+### Which signals identify guidance worth reusing?
+
+Nothing in the system separates a reusable instruction from incidental chat.
+`repeated-guidance.mjs` tests the cheapest candidate signal: **an instruction
+the user repeats in more than one session is a standing preference**, and
+repetition needs no model to detect.
+
+It combines two cues — the sentence has instruction shape (*always, never,
+don't, instead, prefer, only*) rather than question shape, and it recurs across
+sessions.
+
+**The first run found the wrong thing, and that is the useful part.** Its top
+"standing preferences" were lines like *"Bind to loopback only"* and *"Read the
+bundled SDK docs first"* — text from the canvas-authoring skill, stored in
+`turns.user_message` because the session store keeps whatever was submitted,
+not only what a person typed.
+
+Runtime text repeats **word for word** across sessions. A human rephrases every
+time. So repetition, applied naively, finds the boilerplate and misses the
+person:
+
+```
+                                   raw      filtered through prompt-filter
+  instruction-shaped sentences     402                164
+  repeated across 2+ sessions       39                  1
+```
+
+**38 of the 39 were documentation.** The single survivor is genuine:
+
+```
+  [2 sessions, 2 times]
+     "i dont understand this, can you explain in simple words ..."
+     "i dont understand this comment, can you make it in simple words ..."
+```
+
+That is this user's real standing preference, recovered with no model.
+
+Two conclusions. **`prompt-filter.mjs` matters for stored data, not just live
+prompts** — it is currently applied only to incoming prompts, and anything that
+mines session history needs it too. And **repetition is high precision, very
+low recall**: one true positive out of 164 candidates, because 46 sessions is
+not many and people rarely phrase the same request identically twice.
+
 ## Files
 
 | File | Purpose |
@@ -125,6 +168,7 @@ nothing yet.
 | `ask.mjs` | Ask the fake data a question by hand and see why it answered |
 | `check-real.mjs` | Old vs new settings on the real store, read-only |
 | `hint-value.mjs` | Did accepted guidance reach the agent's answer? Read-only |
+| `repeated-guidance.mjs` | Which instructions does the user repeat across sessions? Read-only |
 | `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
 | `rarity-real.mjs` | Tests whether word frequency can spot an empty question, read-only |
 | `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
