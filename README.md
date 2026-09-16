@@ -70,8 +70,14 @@ that is wrong once will be wrong again, and silence is exactly when being wrong
 costs most. Accepts must be **consecutive** — six accepts around one rejection
 earn nothing.
 
-Turning a rule off keeps its evidence and offers **restore**. That exists
+Turning a rule off keeps its evidence and offers **restore**, which exists
 because testing the button destroyed a real observation with no way back.
+Restoring needs no fresh mentions — the evidence never went away.
+
+Turning off is also a decision that sticks. Stating the same preference again
+while it is off attaches to the existing rule and leaves it off; it used to
+create a second rule with identical text, which promoted itself and quietly
+overrode the user.
 
 ### Two sentences per rule
 
@@ -340,8 +346,14 @@ the system has not made. The header counts them — *"2 still being learned"* �
 and they appear the moment a third session confirms them.
 
 Each card leads with the question, shows the instruction underneath, and quotes
-your own words as evidence. Accept, reject, merge, turn off and restore all
+your own words as evidence. Accept, decline, turn off and restore all
 live on the card, each with a tooltip saying what it does.
+
+Merging duplicates is **not** on the card. A dropdown there asked the user to
+spot near-identical wordings and think about how preferences are stored;
+judging whether two sentences mean the same thing is the agent's job. It is
+asked occasionally at session start instead — only once there are several
+preferences, and only sometimes, because usually there is nothing to do.
 
 The card deliberately shows **none of the system's bookkeeping**. It carried
 *"0/5 accepted · 5 more to stop asking"* and a header counting preferences by
