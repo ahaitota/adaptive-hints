@@ -81,8 +81,7 @@ try {
         ruleId: flag("id"),
         rule: flag("rule"),
         // The card asks a question; the agent gets an instruction. Without
-        // this the CLI could only write the instruction, so a preference
-        // recorded by hand showed the user their own words as an order.
+        // this, a hand-recorded preference quotes the user back at themselves.
         ask: flag("ask"),
         when,
         scope: flag("scope") || "global",

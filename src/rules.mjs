@@ -26,37 +26,19 @@ export const RULES_PATH = join(RULES_DIR, "rules.json");
 // Two is coincidence; three is a habit.
 export const SESSIONS_TO_CONFIRM = 3;
 
-// How many times an active rule must be accepted, with no rejection in
-// between, before it stops asking and simply applies itself.
-//
-// Confirmation by repetition proves the user MEANT it. It does not prove the
-// rule was written down correctly, or that firing it at this moment helps. So
-// a confirmed rule still shows a card and earns silence separately. One
-// rejection sends it back to asking, because a rule that is wrong once will be
-// wrong again and silence is exactly when that costs most.
+// Accepts in a row before a preference stops asking and just applies itself.
+// Repetition proves the user meant it; approval proves it was worded right.
 export const ACCEPTS_TO_TRUST = 5;
 
-// How many declines in a row before it stops offering itself.
-//
-// There used to be a "turn off" button and a "restore" button beside it. Both
-// were asking the user to manage storage: turning something off left a dead
-// card in the deck, restoring it undid a button that should not have needed
-// undoing, and "turn off" read almost the same as "decline". Declining
-// repeatedly says the same thing without a setting — this system already
-// counts accepts to earn silence, so counting declines to earn the opposite
-// is the same idea pointed the other way.
+// Declines in a row before it stops offering itself. Saying no three times
+// replaces a "turn off" button, which read the same as "decline" anyway.
 export const DECLINES_TO_STOP = 3;
 
 // How many different repositories before a rule stops being repo-specific.
 export const REPOS_TO_GLOBALISE = 3;
 
-// When a rule should be given to the agent. Stored with the rule because the
-// right moment is part of the preference: "ask before committing" is useless
-// after the commit.
-//
-// `after_changes` was added after reading real sessions: several preferences
-// are about what to do once work is done ("open it in VS Code so I can see"),
-// and the original list had nowhere to put them.
+// When a rule reaches the agent. Part of the preference: "ask before
+// committing" is useless afterwards. after_changes came from real sessions.
 export const MOMENTS = [
     "session_start", "before_changes", "after_changes", "before_commit", "post_plan", "every_prompt",
 ];
@@ -135,13 +117,8 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     let target = ruleId ? store.rules.find((r) => r.id === ruleId) : null;
     if (ruleId && !target) throw new Error(`No such rule: ${ruleId}`);
 
-    // Same sentence written again: treat it as the same rule.
-    //
-    // Retired rules are included deliberately. Excluding them meant that
-    // turning a preference off and then stating it again created a SECOND rule
-    // with identical text, which promoted itself and quietly undid the user's
-    // decision. Attaching here keeps the evidence together and leaves the rule
-    // off until the user restores it.
+    // Same sentence again is the same rule. Retired ones included, or turning
+    // a preference off and restating it would silently create a duplicate.
     if (!target && rule) {
         target = store.rules.find((r) => sameRule(r.rule, rule)) || null;
     }
@@ -149,10 +126,8 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     if (!target) {
         target = {
             id: nextId(store),
-            // Two sentences, on purpose. `rule` is an instruction and goes to
-            // the agent; `ask` is a question and goes on the card. Showing the
-            // instruction to the user reads as their own words quoted back at
-            // them, which is a strange thing to be asked to approve.
+            // `rule` instructs the agent, `ask` questions the user. Showing the
+            // instruction on a card quotes the user back at themselves.
             rule: String(rule).trim(),
             ask: asQuestion(ask),
             when: MOMENTS.includes(when) ? when : "session_start",
@@ -176,12 +151,8 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
         at: Date.now(),
     });
 
-    // Saying it again after it stopped offering itself is the user changing
-    // their mind, and it should not need a button to act on.
-    //
-    // This covers an explicit retire too. That used to stand until deliberately
-    // undone, which was reasonable while a Restore button existed — without
-    // one, a retired preference would be stranded forever with no way back.
+    // Saying it again is the user changing their mind, and needs no button.
+    // Covers an explicit retire too, which would otherwise strand it forever.
     if (target.status === "declined" || target.status === "retired") {
         target.status = "active";
         target.declineStreak = 0;
@@ -241,9 +212,8 @@ export function recordRuleOutcome(store, id, outcome, {
             r.status = "active";
             delete r.trustedAt;
         }
-        // Declined again and again: stop offering it. No button was needed to
-        // say this, and saying it three times is clearer than one click that
-        // could have been a mis-tap.
+        // Declined repeatedly: stop offering it. Three noes are clearer than
+        // one click, which could have been a mis-tap.
         if (r.declineStreak >= declinesToStop) {
             r.status = "declined";
             r.declinedAt = Date.now();
@@ -318,9 +288,8 @@ export function mergeRules(store, keepId, mergeId) {
 export function retireRule(store, id) {
     const r = store.rules.find((x) => x.id === id);
     if (!r) throw new Error(`No such rule: ${id}`);
-    // Status only, never deletion: the evidence is real conversations, and a
-    // mis-click should not destroy it. Found while testing the panel button —
-    // retiring was one click and there was no way back.
+    // Status only, never deletion: the evidence is real conversations and a
+    // mis-click should not destroy it.
     r.status = "retired";
     r.retiredAt = Date.now();
     return r;
@@ -342,13 +311,7 @@ export function retiredRules(store = loadRules()) {
 }
 
 // --- What has already been answered in this conversation -------------------
-//
-// A card stayed on screen after being answered, so the panel looked like it
-// had ignored the click. It also meant a reload could answer the same card
-// twice and inflate the streak. Answers are remembered per session: the card
-// leaves the deck for the rest of this conversation, and the preference is
-// offered again in the next one, which is where the streak is supposed to
-// build.
+// Keeps an answered card off the deck, and stops a reload counting it twice.
 const ANSWERED_DIR = join(RULES_DIR, "answered");
 export { ANSWERED_DIR };
 
@@ -376,14 +339,7 @@ export function markAnswered(sessionId, ruleId) {
 }
 
 // --- What has already been said to the agent in this conversation ----------
-//
-// Every edit fires before_changes and after_changes, so repeating a preference
-// on each one meant the same two lines arriving over and over — noise, and the
-// exact failure this project exists to avoid. It also filled the injection log,
-// which keeps only the last ten entries, pushing out anything worth reading.
-//
-// A preference is said once per moment per session. The agent does not need
-// telling twice in one conversation.
+// Once per moment per session; every edit fires two moments, which flooded both.
 const SAID_DIR = join(RULES_DIR, "said");
 
 function saidPath(sessionId) {
