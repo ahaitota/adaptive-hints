@@ -147,6 +147,14 @@ export function renderHtml() {
     border: 1px solid var(--border-color-default, #30363d); border-radius: 5px;
   }
   .rule button:hover { color: var(--text-color-default, #e6edf3); }
+  .ruleact { margin-top: 5px; }
+  .ruleact button {
+    font-size: 11px; padding: 2px 8px; margin: 0 4px 0 0; cursor: pointer;
+    background: transparent; color: var(--text-color-default, #e6edf3);
+    border: 1px solid var(--border-color-default, #30363d); border-radius: 5px;
+  }
+  .ruleact button.ok { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
+  .ruleact .hint { color: var(--text-color-muted, #8b949e); font-size: var(--text-body-small, 11px); }
 </style>
 </head>
 <body>
@@ -237,6 +245,11 @@ function renderRules() {
         </select>\` : ""}
       </div>
       \${r.quotes && r.quotes.length ? \`<div class="quote">"\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
+      \${r.status === "active" ? \`<div class="ruleact">
+        <button class="ok" data-act="accept" data-id="\${r.id}">Keep applying this</button>
+        <button data-act="reject" data-id="\${r.id}">Not this time</button>
+        <span class="hint">\${5 - (r.streak || 0)} more accept\${5 - (r.streak || 0) === 1 ? "" : "s"} and it stops asking</span>
+      </div>\` : ""}
     </div>\`).join("")
   // Turned-off rules are kept and shown, not deleted: the evidence behind them
   // is real conversation, and a mis-click should be recoverable.
@@ -261,6 +274,12 @@ function renderRules() {
   });
   $("ruleslist").querySelectorAll('button[data-act="restore"]').forEach(b => {
     b.onclick = () => { b.disabled = true; post({ restore: b.dataset.id }); };
+  });
+  $("ruleslist").querySelectorAll('button[data-act="accept"], button[data-act="reject"]').forEach(b => {
+    b.onclick = () => {
+      b.disabled = true;
+      post({ outcome: { id: b.dataset.id, outcome: b.dataset.act === "accept" ? "accepted" : "rejected" } });
+    };
   });
   $("ruleslist").querySelectorAll("select[data-merge]").forEach(s => {
     s.onchange = () => {

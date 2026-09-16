@@ -24,7 +24,8 @@ import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, saveRules, addObservation, promote, rulesFor, ruleMenu,
-    mergeRules, retireRule, restoreRule, retiredRules,
+    mergeRules, retireRule, restoreRule, retiredRules, recordRuleOutcome,
+    silentRules, askingRules,
     distinctSessions, distinctRepositories, describe, MOMENTS,
 } from "./src/rules.mjs";
 import {
@@ -392,11 +393,12 @@ async function startServer(instanceId, sessionId) {
             req.on("end", () => {
                 if (aborted) return;
                 try {
-                    const { merge, retire, restore } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+                    const { merge, retire, restore, outcome } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
                     const store = loadRules();
                     if (merge) mergeRules(store, merge.keep, merge.remove);
                     if (retire) retireRule(store, retire);
                     if (restore) restoreRule(store, restore);
+                    if (outcome) recordRuleOutcome(store, outcome.id, outcome.outcome);
                     saveRules(store);
                     broadcast();
                     res.writeHead(200, { "Content-Type": "application/json" });
@@ -801,18 +803,33 @@ session = await joinSession({
             try {
                 const sessionId = invocation?.sessionId;
                 const repository = repositoryOf(input?.workspacePath);
-                const active = rulesFor({ moment: "session_start", repository });
+                const silent = silentRules({ moment: "session_start", repository });
+                const asking = askingRules({ moment: "session_start", repository });
                 const parts = [];
 
-                if (active.length) {
+                // Trusted rules have been accepted five times running. They are
+                // applied without asking, but never without saying so.
+                if (silent.length) {
                     parts.push(
-                        `[adaptive-hints] ${active.length} learned preference(s) apply to this session:\n`
-                        + active.map((r) => `  - ${r.rule}`).join("\n")
-                        + `\n\nThese were confirmed across ${active.map((r) => distinctSessions(r)).join(", ")} `
-                        + `separate sessions, so follow them without being asked. `
-                        + `Mention once, briefly, that you are applying them.`,
+                        `[adaptive-hints] ${silent.length} remembered preference(s) applied:\n`
+                        + silent.map((r) => `  - ${r.rule}`).join("\n")
+                        + `\n\nFollow these. Say once, briefly, that you are applying `
+                        + `${silent.length} remembered preference(s), and that the panel lists them.`,
                     );
-                    logInjection(sessionId, "active_rules", active.map((r) => r.rule).join("; "));
+                    logInjection(sessionId, "active_rules", silent.map((r) => r.rule).join("; "));
+                }
+
+                // Confirmed, but not yet trusted. Repetition showed the user
+                // meant it; it has not yet shown that the rule was written down
+                // correctly or fires at a useful moment. So it asks.
+                if (asking.length) {
+                    parts.push(
+                        `[adaptive-hints] ${asking.length} learned preference(s) are waiting for approval `
+                        + `in the "Adaptive hints" panel:\n`
+                        + asking.map((r) => `  - ${r.rule} (${r.acceptStreak ?? 0}/5 accepted)`).join("\n")
+                        + `\n\nFollow them for now, and mention in one short sentence that they can be `
+                        + `accepted or rejected in the panel. After five accepts in a row they stop asking.`,
+                    );
                 }
 
                 // The noticing instruction. Capped at one per session on
