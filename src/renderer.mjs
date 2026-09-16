@@ -80,7 +80,6 @@ export function renderHtml() {
     border: 1px dashed var(--border-color-default, #30363d);
     border-radius: 8px; padding: 16px; color: var(--text-color-muted, #8b949e);
   }
-  .stats { margin-top: 20px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 12px; }
   .sent { margin-top: 20px; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 12px; }
   .sent > details > summary {
     cursor: pointer; color: var(--text-color-muted, #8b949e);
@@ -110,9 +109,6 @@ export function renderHtml() {
     display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 10px;
     border: 1px solid var(--border-color-default, #30363d);
   }
-  .stats table { width: 100%; border-collapse: collapse; font-size: var(--text-body-small, 12px); }
-  .stats td { padding: 3px 0; color: var(--text-color-muted, #8b949e); }
-  .stats td.v { text-align: right; font-family: var(--font-mono, monospace); color: var(--text-color-default, #e6edf3); }
   .badge {
     display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px;
     border: 1px solid var(--border-color-default, #30363d); color: var(--text-color-muted, #8b949e);
@@ -171,14 +167,10 @@ export function renderHtml() {
   <div class="sub" style="margin-bottom:6px">Learned preferences</div>
   <div id="ruleslist"></div>
 </div>
-<div class="stats">
-  <div class="sub" style="margin-bottom:6px">Learning signal</div>
-  <table id="stats"></table>
-</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let state = { hints: [], stats: {}, task: "", trigger: "", holdout: false, suppressed: [] };
+let state = { hints: [], task: "", trigger: "", holdout: false, suppressed: [] };
 let lastSig = null;
 let page = 0;
 
@@ -408,23 +400,8 @@ function renderInner() {
     });
   }
 
-  const s = state.stats || {};
-  const noSignal = !s.decided;
   renderSent();
   renderRules();
-  $("stats").innerHTML = \`
-    <tr><td>accept rate\${noSignal ? " <i>(no clicks yet)</i>" : ""}</td><td class="v">\${pct(s.acceptRate)}</td></tr>
-    <tr><td>ignore rate</td><td class="v">\${pct(s.ignoreRate)}</td></tr>
-    <tr><td>engagement (clicked / shown)</td><td class="v">\${pct(s.engagementRate)}</td></tr>
-    <tr><td>impressions</td><td class="v">\${s.impressions ?? 0}</td></tr>
-    <tr><td>accepted / rejected / ignored</td><td class="v">\${s.accepted ?? 0} / \${s.rejected ?? 0} / \${s.ignored ?? 0}</td></tr>
-    <tr><td>agent judged relevant / not</td><td class="v">\${s.agentRelevant ?? 0} / \${s.agentIrrelevant ?? 0}</td></tr>
-    <tr><td>agent precision</td><td class="v">\${pct(s.agentPrecision)}</td></tr>
-    <tr><td>unanswered (no signal)</td><td class="v">\${s.unanswered ?? 0}</td></tr>
-    <tr><td>hints per session</td><td class="v">\${num(s.hintsPerSession)}</td></tr>
-    <tr><td>suppressed candidates</td><td class="v">\${s.suppressedCount ?? 0}</td></tr>
-    <tr><td>gate pass rate</td><td class="v">\${pct(s.gateSelectivity)}</td></tr>
-    <tr><td>holdout triggers</td><td class="v">\${s.holdoutTriggers ?? 0}</td></tr>\`;
 }
 
 async function load() {
