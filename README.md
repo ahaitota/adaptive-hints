@@ -21,6 +21,7 @@ adaptive-hints/
 │   └── changed-files.mjs  files in play, from git
 ├── test/
 │   ├── rules.test.mjs     deterministic tests for preference learning
+│   ├── moments.test.mjs   which tool calls map to which moment
 │   └── observe.mjs        record, list and promote preferences by hand
 ├── local/               retrieval experiments and fixtures, not committed
 ├── artifacts/           your own data, never committed
@@ -79,6 +80,27 @@ Saying the preference again brings it back. There is no *turn off* button and
 no *restore* button: both asked the user to manage storage, turning something
 off left a dead card in the deck, and *turn off* read almost the same as
 *decline*. A preference the user has turned away from is simply not shown.
+
+### When a preference arrives
+
+A preference carries the moment it belongs to, because the right moment is part
+of the preference: *ask before committing* is useless after the commit.
+
+| Moment | Fires when |
+| --- | --- |
+| `session_start` | the session begins |
+| `before_changes` | just before a file is edited or created |
+| `after_changes` | just after |
+| `before_commit` | a shell command containing `git commit` or `git push` |
+| `post_plan`, `every_prompt` | declared, not yet wired |
+
+Tool calls are matched on the tool's **name and arguments**, not a fixed list of
+tool names — a list would quietly stop matching the day a host renames one.
+
+This was decoration for a while. Only `session_start` fired, so *"ask before
+committing"* could be confirmed across four sessions and then ignored at every
+commit. Four of five real preferences were affected. `moments.test.mjs` covers
+the matching, including that the moment is *before* a commit rather than after.
 
 ### Two sentences per rule
 
