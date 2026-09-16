@@ -23,6 +23,10 @@ import { renderHtml } from "./src/renderer.mjs";
 import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
+    loadRules, saveRules, addObservation, promote, rulesFor, ruleMenu,
+    mergeRules, retireRule, distinctSessions, distinctRepositories, describe, MOMENTS,
+} from "./src/rules.mjs";
+import {
     logImpression, logSuppressed, logHoldout, logOutcome,
     readLog, saveProposal, loadProposal, supersedePending,
     computeCounters, acceptanceRate, loadSettings, saveSettings, TEST_MODE_GATE,
@@ -31,6 +35,19 @@ import {
 } from "./src/store.mjs";
 
 const servers = new Map(); // instanceId -> { server, url, clients:Set }
+
+/**
+ * The repository a session belongs to, used to scope preferences.
+ *
+ * A rule learned while working on one project is not automatically true of
+ * another, so scope starts narrow and only widens once the same preference has
+ * appeared in several repositories.
+ */
+function repositoryOf(workspacePath) {
+    if (!workspacePath) return null;
+    const parts = String(workspacePath).replace(/\\/g, "/").split("/").filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : null;
+}
 
 // Restore a fixture database chosen in a previous run. Without this the
 // setting would silently revert to the real store on every extension reload,
@@ -445,6 +462,80 @@ session = await joinSession({
                     },
                 },
                 {
+                    name: "remember_preference",
+                    description:
+                        "Record that the user stated a durable preference about how they want to be worked with. "
+                        + "Reuse an existing ruleId where one fits, rather than writing a near-duplicate. "
+                        + "This CANNOT activate anything: a preference only takes effect once three different "
+                        + "sessions have independently stated it. Use at most once per session, for genuine "
+                        + "standing preferences and corrections — not for ordinary task requests.",
+                    inputSchema: {
+                        type: "object",
+                        required: ["quote"],
+                        properties: {
+                            ruleId: { type: "string", description: "Existing rule to add weight to, e.g. r1" },
+                            rule: { type: "string", description: "One line, if no existing rule fits" },
+                            when: { type: "string", enum: MOMENTS, description: "When this should reach the agent" },
+                            scope: { type: "string", description: "'global', or a repository name" },
+                            quote: { type: "string", description: "The user's own words" },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const { ruleId, rule, when, scope, quote } = ctx.input ?? {};
+                        const store = loadRules();
+                        const target = addObservation(store, {
+                            ruleId, rule, when, scope: scope || "global",
+                            repository: repositoryOf(session.workspacePath),
+                            sessionId: ctx.sessionId,
+                            quote,
+                        });
+                        // Promotion runs here rather than on a schedule: the
+                        // only moment the count can change is when something is
+                        // written, and counting a few hundred rows is free.
+                        const promoted = promote(store);
+                        saveRules(store);
+                        broadcast();
+                        return {
+                            ruleId: target.id,
+                            rule: target.rule,
+                            status: target.status,
+                            sessions: distinctSessions(target),
+                            needed: 3,
+                            activatedNow: promoted.some((p) => p.id === target.id),
+                        };
+                    },
+                },
+                {
+                    name: "preferences",
+                    description: "List learned preferences, and merge or retire one. Read-only unless merge/retire is given.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            merge: {
+                                type: "object",
+                                description: "Fold one rule into another, keeping all evidence",
+                                required: ["keep", "remove"],
+                                properties: { keep: { type: "string" }, remove: { type: "string" } },
+                            },
+                            retire: { type: "string", description: "Rule id to stop applying" },
+                        },
+                    },
+                    handler: async (ctx) => {
+                        const store = loadRules();
+                        const { merge, retire } = ctx.input ?? {};
+                        if (merge) mergeRules(store, merge.keep, merge.remove);
+                        if (retire) retireRule(store, retire);
+                        if (merge || retire) { saveRules(store); broadcast(); }
+                        const { active, candidates } = describe(store);
+                        const shape = (r) => ({
+                            id: r.id, rule: r.rule, when: r.when, scope: r.scope,
+                            sessions: distinctSessions(r), repositories: distinctRepositories(r),
+                            quotes: r.observations.slice(-3).map((o) => o.quote),
+                        });
+                        return { active: active.map(shape), candidates: candidates.map(shape) };
+                    },
+                },
+                {
                     name: "explain",
                     description: "Explain, without showing anything, how the current task would be scored and gated. Use for tuning; logs nothing.",
                     inputSchema: {
@@ -639,6 +730,50 @@ session = await joinSession({
         }),
     ],
     hooks: {
+        // Once per session: hand the agent the learned preferences, and the
+        // list it needs in order to add to them instead of inventing
+        // near-duplicates. Done at session start rather than per prompt because
+        // the list is the expensive part and it does not change mid-session —
+        // paying for it on every message would be the same cost many times over.
+        onSessionStart: async (input, invocation) => {
+            try {
+                const sessionId = invocation?.sessionId;
+                const repository = repositoryOf(input?.workspacePath);
+                const active = rulesFor({ moment: "session_start", repository });
+                const parts = [];
+
+                if (active.length) {
+                    parts.push(
+                        `[adaptive-hints] ${active.length} learned preference(s) apply to this session:\n`
+                        + active.map((r) => `  - ${r.rule}`).join("\n")
+                        + `\n\nThese were confirmed across ${active.map((r) => distinctSessions(r)).join(", ")} `
+                        + `separate sessions, so follow them without being asked. `
+                        + `Mention once, briefly, that you are applying them.`,
+                    );
+                    logInjection(sessionId, "active_rules", active.map((r) => r.rule).join("; "));
+                }
+
+                // The noticing instruction. Capped at one per session on
+                // purpose: an agent invited to record a preference every turn
+                // will find one every turn, and the pool fills with noise.
+                parts.push(
+                    `[adaptive-hints] If the user states a DURABLE preference about how they want to be `
+                    + `worked with — how to explain, when to ask, what not to do — record it once per `
+                    + `session with the canvas action \`remember_preference\`. Corrections are the strongest `
+                    + `signal: if they tell you to stop doing something you just did, that is a preference. `
+                    + `Ordinary task requests are NOT preferences.\n`
+                    + `Reuse an id from this list where one fits, rather than writing a near-duplicate:\n`
+                    + (ruleMenu() || "  (nothing learned yet)")
+                    + `\nNothing you record takes effect on its own; a preference only becomes active once `
+                    + `three different sessions have independently stated it.`,
+                );
+
+                return { additionalContext: parts.join("\n\n") };
+            } catch {
+                return;
+            }
+        },
+
         // The automatic trigger. Every submitted prompt is a candidate moment;
         // the gate decides whether anything is actually worth surfacing, so in
         // practice this stays quiet most of the time.
