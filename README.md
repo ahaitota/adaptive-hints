@@ -388,6 +388,31 @@ declined away are not kept as dead cards — a preference nobody wants should no
 reappear at the end of the list. Both return on their own: one when a third
 session confirms it, the other when the user states it again.
 
+**A card appears only once the agent has actually been told.** The deck is
+gated on the same per-session record that tracks what was said, so a visible
+card means the preference is in effect *right now* — not merely stored.
+
+This started as a visible inconsistency: the panel offered five cards the
+moment a session opened, while the agent had only received one. Four of the
+five were waiting on a moment that had not come round yet, and the agent
+correctly mentioned just the one it had. Reported as *"why all of 5 showed in
+one go? I wanted them to be shown only when it is really necessary."*
+
+With the real preference set, one session now looks like this:
+
+| Point in the session | Cards |
+| --- | --- |
+| Session opens | 1 — *explain in plain language* |
+| About to commit | 2 — *ask first*, *give me the commands* |
+| Just finished an edit | 1 — *open the result* |
+
+It also answers a question the panel could not previously answer: *how do I
+know when the agent gets the hint?* The card appearing **is** the notification.
+
+Because of this, an empty panel now distinguishes *"nothing applies right
+now"* from *"nothing learned yet"* — otherwise a quiet panel reads as a broken
+one.
+
 An answered card leaves the deck for the rest of the conversation, and the
 preference is offered again in the next one — which is where the streak is
 meant to build. That is not only so the click visibly does something: without
