@@ -26,7 +26,7 @@ import {
     loadRules, saveRules, addObservation, promote, ruleMenu,
     mergeRules, retireRule, restoreRule, recordRuleOutcome,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
-    distinctSessions, distinctRepositories, describe, MOMENTS,
+    distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
 } from "./src/rules.mjs";
 import {
     logImpression, logSuppressed, logHoldout, logOutcome,
@@ -183,19 +183,28 @@ function currentState(sessionId) {
         rules: (() => {
             const { trusted, active, candidates, dropped } = describe(syncedRules());
             const answered = answeredIn(sessionId);
+            const delivered = saidIn(sessionId);
             const shape = (r) => ({
                 id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
                 accepts: r.accepts ?? 0, rejects: r.rejects ?? 0, streak: r.acceptStreak ?? 0,
                 quotes: r.observations.slice(-2).map((o) => o.quote),
             });
-            const unanswered = (list) => list.filter((r) => !answered.has(r.id)).map(shape);
+            // A card appears only once its moment has fired and the agent has
+            // actually been told, so seeing it means it is in play right now.
+            const onDeck = (list) => list
+                .filter((r) => isOnDeck(r, answered, delivered))
+                .map(shape);
+            const ready = [...trusted, ...active].filter((r) => !answered.has(r.id));
             return {
-                trusted: unanswered(trusted),
-                active: unanswered(active),
+                trusted: onDeck(trusted),
+                active: onDeck(active),
                 candidates: candidates.map(shape),
                 dropped: dropped.map(shape),
                 answeredHere: answered.size,
+                // Confirmed, but their moment has not come round yet. Lets the
+                // empty panel say "not now" rather than "nothing learned".
+                waitingForMoment: ready.filter((r) => !delivered.has(`${r.id}@${r.when}`)).length,
             };
         })(),
         hints,
@@ -906,11 +915,15 @@ session = await joinSession({
                     parts.push(
                         `[adaptive-hints] ${asking.length} learned preference(s) are waiting for approval `
                         + `in the "Adaptive hints" panel:\n`
-                        + asking.map((r) => `  - ${r.rule} (${r.acceptStreak ?? 0}/5 accepted)`).join("\n")
+                        + asking.map((r) => `  - ${r.rule}`).join("\n")
                         + `\n\nFollow them for now, and mention in one short sentence that they can be `
-                        + `accepted or rejected in the panel. After five accepts in a row they stop asking.`,
+                        + `accepted or rejected in the panel.`,
                     );
                 }
+
+                // Marked delivered so the panel can show exactly what the agent
+                // was told, and nothing it was not.
+                markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@session_start`));
 
                 // The noticing instruction. Capped at one per session on
                 // purpose: an agent invited to record a preference every turn

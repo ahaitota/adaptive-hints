@@ -276,6 +276,10 @@ function renderInner() {
     box.innerHTML = rules.answeredHere
       ? '<div class="done">Thanks — that is everything for now. '
         + 'They will come round again next time.</div>'
+      : rules.waitingForMoment
+      ? '<div class="empty">Nothing needed right now. Your saved preferences show up '
+        + 'here at the moment they apply — before a change, before a commit, '
+        + 'after a result.</div>'
       : '<div class="empty">Nothing to approve yet. Say how you like to be worked with '
         + '— "explain in simple words", "ask before committing" — and once a few sessions '
         + 'have said the same thing, it will appear here.</div>';

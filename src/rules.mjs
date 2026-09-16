@@ -375,6 +375,15 @@ export function ruleMenu(store = loadRules()) {
         .join("\n");
 }
 
+/**
+ * Show a card only once its moment has fired and the agent has been told.
+ * Seeing a card therefore means it is in play right now, not merely stored.
+ */
+export function isOnDeck(rule, answered, delivered) {
+    if (answered.has(rule.id)) return false;
+    return delivered.has(`${rule.id}@${rule.when}`);
+}
+
 /** Human-readable summary, for the panel and for rules.md. */
 export function describe(store = loadRules()) {
     const by = (s) => store.rules.filter((r) => r.status === s);

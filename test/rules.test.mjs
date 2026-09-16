@@ -10,7 +10,7 @@ import {
     addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
-    distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu,
+    distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu, isOnDeck,
 } from "../src/rules.mjs";
 import { join } from "node:path";
 import { rmSync, existsSync } from "node:fs";
@@ -427,6 +427,34 @@ console.log("=".repeat(62));
     check("a missing file loads as empty rather than crashing",
         loadRules(join(tmpdir(), "definitely-not-here.json")).rules.length === 0);
     check("the test left no file behind", !existsSync(path));
+}
+
+// --- A card appears only when the agent has actually been told -------------
+//
+// The panel showed every confirmed preference the moment a session opened,
+// while the agent only received the ones whose moment had fired. Five cards
+// appeared at once and four of them were not in play.
+{
+    const rule = { id: "r1", when: "before_commit" };
+    const none = new Set();
+
+    check("a preference whose moment has not fired shows no card",
+        isOnDeck(rule, none, new Set()) === false);
+
+    check("it appears once the agent has been told at that moment",
+        isOnDeck(rule, none, new Set(["r1@before_commit"])) === true);
+
+    check("being told at a different moment does not show it",
+        isOnDeck(rule, none, new Set(["r1@session_start"])) === false);
+
+    check("another rule's delivery does not show it",
+        isOnDeck(rule, none, new Set(["r2@before_commit"])) === false);
+
+    check("answering removes the card even though it was delivered",
+        isOnDeck(rule, new Set(["r1"]), new Set(["r1@before_commit"])) === false);
+
+    check("a session_start preference is on deck as soon as the session opens",
+        isOnDeck({ id: "r9", when: "session_start" }, none, new Set(["r9@session_start"])) === true);
 }
 
 console.log("=".repeat(62));
