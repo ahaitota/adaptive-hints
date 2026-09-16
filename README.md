@@ -342,9 +342,14 @@ The panel shows **one learned preference at a time**, in a card, with a pager
 to walk through them: waiting for an answer first, then the ones already
 applied silently.
 
-Each card leads with the question, shows the instruction underneath, and quotes
-your own words as evidence. **Accept** and **Decline** are the only choices; a
-preference that is already applied silently offers **Ask me again** instead.
+Each card leads with the question and quotes your own words as evidence.
+**Accept** and **Decline** are the only choices; a preference that is already
+applied silently offers **Ask me again** instead.
+
+The card used to show the instruction too — *"as a rule: Give me the commands
+so I can run them myself"* under *"Would you like the commands, so you can run
+them yourself?"* — which is the same sentence twice. The instruction is what
+reaches the agent; the user only needs the question and the evidence behind it.
 
 The deck holds only what is being offered or applied. Preferences still
 gathering evidence have not been offered, so asking the user to react to them

@@ -64,9 +64,10 @@ export function renderHtml() {
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   .pager { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--text-color-muted, #8b949e); }
-  .body {
+  .card .body {
     color: var(--text-color-muted, #8b949e); margin: 0.45rem 0 0.85rem; overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+    font-style: italic;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
   .actions { margin-top: auto; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .verdict {
@@ -135,7 +136,6 @@ export function renderHtml() {
     margin-left: 6px; white-space: nowrap;
   }
   .card.off { opacity: .55; }
-  .card .quote { font-style: italic; margin-top: 0.3rem; opacity: .85; }
   .card .hint { color: var(--text-color-muted, #8b949e); font-size: 0.8rem; }
   .card select {
     font-size: 0.8rem; background: transparent; color: var(--text-color-muted, #8b949e);
@@ -293,8 +293,7 @@ function renderInner() {
           </div>
         </div>
         <div class="body">
-          \${r.ask ? \`as a rule: \${esc(r.rule)}\` : ""}
-          \${r.quotes && r.quotes.length ? \`<div class="quote">You said: "\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
+          \${r.quotes && r.quotes.length ? \`You said: "\${esc(r.quotes[r.quotes.length - 1])}"\` : ""}
         </div>
         \${r.status === "trusted" ? '<div class="verdict yes">Applied automatically</div>' : ""}
         <div class="actions">
