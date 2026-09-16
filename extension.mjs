@@ -133,7 +133,7 @@ function currentState(sessionId) {
         fixtureStore: sessionStorePath() !== DEFAULT_SESSION_STORE ? sessionStorePath() : null,
         injections: readInjections(sessionId),
         rules: (() => {
-            const { trusted, active, candidates } = describe(syncedRules());
+            const { trusted, active, candidates, dropped } = describe(syncedRules());
             const shape = (r) => ({
                 id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
@@ -144,7 +144,7 @@ function currentState(sessionId) {
                 trusted: trusted.map(shape),
                 active: active.map(shape),
                 candidates: candidates.map(shape),
-                retired: retiredRules(loadRules()).map(shape),
+                dropped: dropped.map(shape),
             };
         })(),
         hints,

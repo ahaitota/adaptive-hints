@@ -256,16 +256,11 @@ function render() {
 }
 
 function renderInner() {
-  const rules = state.rules || { trusted: [], active: [], candidates: [], retired: [] };
-  // Candidates are deliberately absent. A preference that has not reached three
-  // sessions has not been offered, so showing it would ask the user to react to
-  // something the system has not decided about — and the evidence behind it is
-  // still being gathered. They appear the moment they are confirmed.
-  const deck = [
-    ...rules.active,
-    ...(rules.trusted || []),
-    ...(rules.retired || []),
-  ];
+  const rules = state.rules || { trusted: [], active: [], candidates: [] };
+  // Only what the user can act on. Preferences still gathering evidence have
+  // not been offered, and ones they have turned away from should not keep
+  // reappearing at the end of the list — a dead card is worse than no card.
+  const deck = [...rules.active, ...(rules.trusted || [])];
 
   // The header carried counts — how many were waiting, how many were still
   // being learned. Those are the system's bookkeeping, not the user's, and a
@@ -288,7 +283,7 @@ function renderInner() {
     el.className = "row";
     el.innerHTML = \`
       <div class="bulb">&#128161;</div>
-      <div class="card \${r.status === "retired" ? "off" : ""}">
+      <div class="card">
         <div class="card-head">
           <div class="title">\${esc(r.ask || r.rule)}</div>
           <div class="pager">
@@ -300,21 +295,17 @@ function renderInner() {
         <div class="body">
           \${r.ask ? \`as a rule: \${esc(r.rule)}\` : ""}
           \${r.quotes && r.quotes.length ? \`<div class="quote">You said: "\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
-        \${r.status === "trusted"
-          ? '<div class="verdict yes">Applied automatically</div>'
-          : r.status === "retired" ? '<div class="verdict">Turned off</div>' : ""}
+        </div>
+        \${r.status === "trusted" ? '<div class="verdict yes">Applied automatically</div>' : ""}
         <div class="actions">
           <div class="spacer"></div>
           \${r.status === "active" ? \`
             <button class="primary" data-act="accept" data-id="\${r.id}"
               title="Keep working this way">Accept</button>
             <button data-act="reject" data-id="\${r.id}"
-              title="Skip it this time">Decline</button>\` : ""}
-          \${r.status === "retired"
-            ? \`<button data-act="restore" data-id="\${r.id}" title="Use this preference again">Restore</button>\`
-            : \`<button data-act="retire" data-id="\${r.id}"
-                title="Stop using this preference. Nothing is lost — it can be restored."
-              >Turn off</button>\`}
+              title="Not this time. Decline it a few times and it stops asking.">Decline</button>\`
+          : \`<button data-act="reject" data-id="\${r.id}"
+              title="Go back to being asked each time">Ask me again</button>\`}
         </div>
       </div>\`;
     box.appendChild(el);
@@ -336,8 +327,6 @@ function renderInner() {
       const id = b.dataset.id;
       if (b.dataset.act === "accept") return post({ outcome: { id, outcome: "accepted" } });
       if (b.dataset.act === "reject") return post({ outcome: { id, outcome: "rejected" } });
-      if (b.dataset.act === "retire") return post({ retire: id });
-      if (b.dataset.act === "restore") return post({ restore: id });
     });
   }
 

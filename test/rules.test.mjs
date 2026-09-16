@@ -244,6 +244,54 @@ console.log("=".repeat(62));
     })());
 }
 
+// --- Declining repeatedly is how a preference goes away -------------------
+//
+// There were "turn off" and "restore" buttons. Both asked the user to manage
+// storage: turning something off left a dead card in the deck, and "turn off"
+// read almost the same as "decline". Saying no three times says it without a
+// setting, and saying the thing again brings it back without one either.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Y", when: "session_start", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "rejected");
+    check("two declines still offers it", r.status === "active", `status=${r.status}`);
+    recordRuleOutcome(s, r.id, "rejected");
+    check("three declines in a row stops it offering itself", r.status === "declined");
+    check("a stopped preference leaves the deck", rulesFor({}, s).length === 0);
+    check("...and is not re-promoted by the next pass", promote(s).length === 0 && r.status === "declined");
+    check("...and cannot be accepted, since it is not shown", (() => {
+        try { recordRuleOutcome(s, r.id, "accepted"); return false; } catch { return true; }
+    })());
+
+    // No Restore button: saying it again is the user changing their mind.
+    addObservation(s, { ruleId: r.id, sessionId: "D", quote: "q" });
+    check("stating it again brings it straight back", r.status === "active" && r.declineStreak === 0);
+    check("its whole history is still there", r.observations.length === 4 && r.rejects === 3);
+}
+
+// --- An accept in between resets the decline streak ------------------------
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Z", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "accepted");
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "rejected");
+    check("declines must be consecutive to stop it",
+        r.status === "active", `status=${r.status} streak=${r.declineStreak}`);
+    recordRuleOutcome(s, r.id, "rejected");
+    check("three in a row after that does stop it", r.status === "declined");
+}
+
 // --- Turning a preference off is a decision, and it sticks ----------------
 //
 // Restoring must not demand three fresh mentions — the evidence never went
@@ -265,8 +313,8 @@ console.log("=".repeat(62));
     const again = addObservation(s, { rule: "Test rule", sessionId: "D", quote: "q" });
     check("re-stating it while off does not create a second rule",
         again.id === r.id && s.rules.length === 1, `${s.rules.length} rules`);
-    promote(s);
-    check("...and it stays off until the user restores it", r.status === "retired", `status=${r.status}`);
+    check("...and it comes back, since there is no Restore button to press",
+        r.status === "active", `status=${r.status}`);
     check("the new evidence is still recorded", r.observations.length === 4);
 }
 

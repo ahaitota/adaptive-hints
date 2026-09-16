@@ -36,6 +36,17 @@ export const SESSIONS_TO_CONFIRM = 3;
 // wrong again and silence is exactly when that costs most.
 export const ACCEPTS_TO_TRUST = 5;
 
+// How many declines in a row before it stops offering itself.
+//
+// There used to be a "turn off" button and a "restore" button beside it. Both
+// were asking the user to manage storage: turning something off left a dead
+// card in the deck, restoring it undid a button that should not have needed
+// undoing, and "turn off" read almost the same as "decline". Declining
+// repeatedly says the same thing without a setting — this system already
+// counts accepts to earn silence, so counting declines to earn the opposite
+// is the same idea pointed the other way.
+export const DECLINES_TO_STOP = 3;
+
 // How many different repositories before a rule stops being repo-specific.
 export const REPOS_TO_GLOBALISE = 3;
 
@@ -164,6 +175,19 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
         quote: String(quote ?? "").replace(/\s+/g, " ").slice(0, 200),
         at: Date.now(),
     });
+
+    // Saying it again after it stopped offering itself is the user changing
+    // their mind, and it should not need a button to act on.
+    //
+    // This covers an explicit retire too. That used to stand until deliberately
+    // undone, which was reasonable while a Restore button existed — without
+    // one, a retired preference would be stranded forever with no way back.
+    if (target.status === "declined" || target.status === "retired") {
+        target.status = "active";
+        target.declineStreak = 0;
+        delete target.declinedAt;
+        delete target.retiredAt;
+    }
     return target;
 }
 
@@ -187,19 +211,23 @@ export function distinctRepositories(rule) {
  * that is wrong once will be wrong again, and silence is exactly when being
  * wrong costs most.
  */
-export function recordRuleOutcome(store, id, outcome, { acceptsToTrust = ACCEPTS_TO_TRUST } = {}) {
+export function recordRuleOutcome(store, id, outcome, {
+    acceptsToTrust = ACCEPTS_TO_TRUST,
+    declinesToStop = DECLINES_TO_STOP,
+} = {}) {
     const r = store.rules.find((x) => x.id === id);
     if (!r) throw new Error(`No such rule: ${id}`);
     if (!["accepted", "rejected"].includes(outcome)) {
         throw new Error(`outcome must be accepted or rejected, got ${outcome}`);
     }
-    if (r.status === "candidate" || r.status === "retired") {
+    if (r.status === "candidate" || r.status === "retired" || r.status === "declined") {
         throw new Error(`Rule ${id} is ${r.status}; only active or trusted rules are offered`);
     }
 
     if (outcome === "accepted") {
         r.accepts = (r.accepts ?? 0) + 1;
         r.acceptStreak = (r.acceptStreak ?? 0) + 1;
+        r.declineStreak = 0;
         if (r.status === "active" && r.acceptStreak >= acceptsToTrust) {
             r.status = "trusted";
             r.trustedAt = Date.now();
@@ -207,10 +235,18 @@ export function recordRuleOutcome(store, id, outcome, { acceptsToTrust = ACCEPTS
     } else {
         r.rejects = (r.rejects ?? 0) + 1;
         r.acceptStreak = 0;
+        r.declineStreak = (r.declineStreak ?? 0) + 1;
         // Back to asking. Earning silence starts over.
         if (r.status === "trusted") {
             r.status = "active";
             delete r.trustedAt;
+        }
+        // Declined again and again: stop offering it. No button was needed to
+        // say this, and saying it three times is clearer than one click that
+        // could have been a mis-tap.
+        if (r.declineStreak >= declinesToStop) {
+            r.status = "declined";
+            r.declinedAt = Date.now();
         }
     }
     return r;
@@ -229,7 +265,7 @@ export function recordRuleOutcome(store, id, outcome, { acceptsToTrust = ACCEPTS
 export function promote(store, { sessionsToConfirm = SESSIONS_TO_CONFIRM, reposToGlobalise = REPOS_TO_GLOBALISE } = {}) {
     const promoted = [];
     for (const r of store.rules) {
-        if (r.status === "retired") continue;
+        if (r.status === "retired" || r.status === "declined") continue;
         const sessions = distinctSessions(r);
         if (r.status === "candidate" && sessions >= sessionsToConfirm) {
             r.status = "active";
@@ -308,7 +344,7 @@ export function retiredRules(store = loadRules()) {
 /** The list shown to the agent so it can reuse an id instead of inventing one. */
 export function ruleMenu(store = loadRules()) {
     return store.rules
-        .filter((r) => r.status !== "retired")
+        .filter((r) => r.status !== "retired" && r.status !== "declined")
         .map((r) => `  ${r.id}  ${r.rule}  (${distinctSessions(r)} sessions, ${r.status})`)
         .join("\n");
 }
@@ -320,6 +356,9 @@ export function describe(store = loadRules()) {
         trusted: by("trusted"),
         active: by("active"),
         candidates: by("candidate"),
+        // Things the user has turned away from, by declining repeatedly or by
+        // an explicit retire. Kept, never shown in the deck.
+        dropped: store.rules.filter((r) => r.status === "declined" || r.status === "retired"),
         total: store.rules.length,
     };
 }
