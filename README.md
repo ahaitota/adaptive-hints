@@ -13,28 +13,92 @@ adaptive-hints/
 ├── extension.mjs        entry point — must keep this name and location,
 │                        the app discovers extensions by finding it
 ├── src/                 implementation
+│   ├── rules.mjs          preferences learned across sessions
 │   ├── retrieval.mjs      search over the local session store
 │   ├── ranker.mjs         scoring, gating, exploration
 │   ├── store.mjs          the learning log and settings
 │   ├── renderer.mjs       the canvas panel
 │   ├── prompt-filter.mjs  real prompts vs runtime-injected text
 │   └── changed-files.mjs  files in play, from git
-├── test/                evaluation suite
-│   ├── run-group-a.mjs    runs the tests, prints a report
-│   ├── build.mjs          builds the fixture databases
-│   ├── generate.mjs       session generator
-│   ├── topics.mjs         ten unrelated subject areas
-│   ├── language.mjs       sentence frames and vocabulary
-│   ├── questions-a2.mjs   hand-written test questions
-│   └── db/                generated, not committed
+├── test/
+│   ├── rules.test.mjs     deterministic tests for preference learning
+│   └── observe.mjs        record, list and promote preferences by hand
+├── local/               retrieval experiments and fixtures, not committed
 ├── artifacts/           your own data, never committed
 └── .gitignore
 ```
 
 Three things are deliberately kept out of version control: `artifacts/`, which
-holds real repository names and file paths from your own sessions; `test/db/`,
-which is 23 MB of generated data reproducible byte for byte by
-`node test/build.mjs`; and `docs/`, which holds local planning notes.
+holds real repository names, file paths and quotes from your own sessions;
+`local/`, which holds the retrieval evaluation suite and its 23 MB of generated
+fixtures; and `docs/`, which holds local planning notes.
+
+## Preferences learned across sessions
+
+A new session starts knowing nothing about you. If you have asked thirteen
+times to be answered in plain language, the fourteenth session still has to be
+told. This is the part that remembers.
+
+**An agent notices. Code confirms.**
+
+One session cannot know whether a request is a standing preference or a one-off
+— it has seen one conversation, and it has just been told the thing, which
+makes it a poor judge of whether the thing matters. So the agent may only
+record an **observation**, tagged with its session. Everything after that is
+arithmetic over distinct session IDs, which one session cannot fake.
+
+That guarantee is structural rather than a promise: `addObservation` has no
+status field, and only `promote()` writes one. The first test in
+`rules.test.mjs` fires fifty observations from a single session and asserts
+that nothing is activated.
+
+### Three stages
+
+| Stage | Reached by | Behaviour |
+| --- | --- | --- |
+| **candidate** | fewer than 3 sessions | invisible, gathering evidence |
+| **active** | 3 different sessions state it | applied, and asks each time |
+| **trusted** | 5 accepts in a row | applied silently |
+
+Repetition and approval answer different questions. Repetition shows you
+**meant** it. It cannot show that the rule was written down correctly, or that
+firing it at that moment helps, because you were never asked. So confirmation
+and silence are earned separately.
+
+One rejection resets the streak and pulls a trusted rule back to asking. A rule
+that is wrong once will be wrong again, and silence is exactly when being wrong
+costs most. Accepts must be **consecutive** — six accepts around one rejection
+earn nothing.
+
+Turning a rule off keeps its evidence and offers **restore**. That exists
+because testing the button destroyed a real observation with no way back.
+
+### No keyword matching
+
+The agent is shown the current rule list at session start and either adds
+weight to an existing id or writes a new one-line rule. Code only counts.
+
+This matters because word matching cannot see that *"in simple words"*,
+*"simpler"* and *"I don't understand"* are one preference. Measured on a real
+session store: counting words found **one** preference; letting the agent group
+them found **six**.
+
+### Scope
+
+A rule starts at the narrowest scope that fits and widens only on evidence —
+the same preference seen in three different repositories becomes global. One
+agent cannot decide something is universal, having seen one project.
+
+### By hand
+
+```
+node test/observe.mjs --list
+node test/observe.mjs --session <id> --rule "..." --when ... --quote "..."
+node test/observe.mjs --promote
+```
+
+Rules live in `artifacts/rules.json`: plain text, readable, editable and
+deletable without tooling, like the hint log.
 
 ## What it does
 
@@ -137,7 +201,7 @@ Global off switch: `configure` with `{ "autoPropose": false }`.
    1.0**. Saturation maps them to 0.80 and 0.40 instead, without looking at the
    other results, so "best of a weak field" stays weak.
 
-   `8` is the score that maps to 0.5, swept in `test/sweep-bm25.mjs`. Every
+   `8` is the score that maps to 0.5, swept in `local/sweep-bm25.mjs`. Every
    value from 2 to 24 keeps all tests green, and 8 sits mid-range rather than at
    an edge. Be honest about the size of this: coverage carries 0.75 of the
    weight and the cutoff does most of the filtering, so on real data this
@@ -220,6 +284,8 @@ already ranked first, and the counters can never self-correct.
 
 | Action | Purpose |
 | --- | --- |
+| `remember_preference` | Record a durable preference the user stated. Cannot activate anything. |
+| `preferences` | List learned preferences; merge or retire one. |
 | `propose` | Retrieve → rank → gate → display. Logs an impression per hint shown. |
 | `record_outcome` | `accepted` / `rejected` / `ignored` / `preempted`. Rejects unknown hint IDs. |
 | `stats` | Phase-5 evaluation metrics + learned per-type counters. |
@@ -419,3 +485,12 @@ all learning.
   impressions first.
 - Cold start falls back to pure retrieval with a *stricter* effective gate,
   which is the intended direction.
+- **Nothing measures whether a preference was learned correctly.** The tests
+  cover everything that decides whether to *trust* the agent's judgement — the
+  counting, the stages, the scope — but not the judgement itself. A rule
+  recorded from a misread conversation would still need three sessions and five
+  accepts before it could act silently, which is the point, but no test catches
+  a badly worded rule.
+- **Preferences need three sessions before they do anything.** On a fresh
+  machine the feature is invisible for a while. Backfilling from existing
+  session history (`local/backfill.mjs`) is how it starts with something.
