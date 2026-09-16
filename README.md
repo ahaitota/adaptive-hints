@@ -339,16 +339,23 @@ offered, so asking the user to react to them would be asking about a decision
 the system has not made. The header counts them — *"2 still being learned"* —
 and they appear the moment a third session confirms them.
 
-Each card leads with the question, shows the instruction underneath, quotes
-your own words as evidence, and says which stage it is in — *waiting for your
-answer · 2/5 accepted*, *applied without asking*, *turned off*. Accept, reject,
-merge, turn off and restore all live on the card, each with a tooltip saying
-what it costs.
+Each card leads with the question, shows the instruction underneath, and quotes
+your own words as evidence. Accept, reject, merge, turn off and restore all
+live on the card, each with a tooltip saying what it does.
+
+The card deliberately shows **none of the system's bookkeeping**. It carried
+*"0/5 accepted · 5 more to stop asking"* and a header counting preferences by
+stage; those numbers mean something to whoever wrote the gate and nothing to
+anyone using it. The counting still happens, quietly. The one exception is a
+preference that has earned silence, which says *"Applied automatically"* —
+worth knowing, because otherwise it changes behaviour invisibly.
 
 Cards are a fixed height with the buttons pinned to the bottom, and the panel
-scales with its own width. Both exist because of how it felt to use: paging
-between cards of different heights moved the buttons under the cursor, and the
-panel sat stretched after a resize until the mouse entered it.
+scales with its measured width and re-renders on resize. All three exist
+because of how it felt to use: paging between cards of different heights moved
+the buttons under the cursor, and the panel sat stretched after a resize until
+the mouse entered it — setting the size was not enough, since nothing had
+invalidated the frame.
 
 Two things used to sit here and no longer do. A **retrieval hint card** with a
 "Why this?" score breakdown occupied this slot, which was the wrong way round —
