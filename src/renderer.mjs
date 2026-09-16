@@ -262,9 +262,9 @@ function renderInner() {
         <div class="card-head">
           <div class="title">\${esc(r.ask || r.rule)}</div>
           <div class="pager">
-            <button \${deck.length < 2 ? "disabled" : ""} data-nav="-1">&lt;</button>
+            <button \${deck.length < 2 ? "disabled" : ""} data-nav="-1" title="Previous preference">&lt;</button>
             <span>\${page + 1} / \${deck.length}</span>
-            <button \${deck.length < 2 ? "disabled" : ""} data-nav="1">&gt;</button>
+            <button \${deck.length < 2 ? "disabled" : ""} data-nav="1" title="Next preference">&gt;</button>
           </div>
         </div>
         <div class="body">
@@ -278,18 +278,25 @@ function renderInner() {
           : \`Turned off · \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept\`
         }</div>
         <div class="actions">
-          \${deck.length > 1 && r.status !== "retired" ? \`<select data-merge="\${r.id}">
+          \${deck.length > 1 && r.status !== "retired" ? \`<select data-merge="\${r.id}"
+            title="These two mean the same thing — fold this card into that one, keeping both sets of evidence">
             <option value="">merge into…</option>\${
               deck.filter(o => o.id !== r.id && o.status !== "retired")
                   .map(o => \`<option value="\${o.id}">\${esc((o.rule || "").slice(0, 30))}</option>\`).join("")
             }</select>\` : ""}
           <div class="spacer"></div>
           \${r.status === "active" ? \`
-            <button class="primary" data-act="accept" data-id="\${r.id}">Yes, please</button>
-            <button data-act="reject" data-id="\${r.id}">Not this time</button>\` : ""}
+            <button class="primary" data-act="accept" data-id="\${r.id}"
+              title="Apply this. Five in a row and it stops asking.">Yes, please</button>
+            <button data-act="reject" data-id="\${r.id}"
+              title="Do not apply it now. Resets the count to zero.">Not this time</button>\` : ""}
           \${r.status === "retired"
-            ? \`<button data-act="restore" data-id="\${r.id}">Restore</button>\`
-            : \`<button data-act="retire" data-id="\${r.id}">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>\`}
+            ? \`<button data-act="restore" data-id="\${r.id}" title="Use this preference again">Restore</button>\`
+            : \`<button data-act="retire" data-id="\${r.id}" title="\${
+                r.status === "candidate"
+                  ? "Stop collecting evidence for this. It can be restored."
+                  : "Stop using this preference. Its evidence is kept and it can be restored."
+              }">\${r.status === "candidate" ? "Discard" : "Turn off"}</button>\`}
         </div>
       </div>\`;
     box.appendChild(el);
