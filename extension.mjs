@@ -798,12 +798,13 @@ session = await joinSession({
                 }
                 const st = currentState(ctx.sessionId);
                 const waiting = (st.rules?.active ?? []).length;
-                const total = (st.rules?.active ?? []).length + (st.rules?.candidates ?? []).length
-                    + (st.rules?.trusted ?? []).length;
                 return {
                     title: "Adaptive hints",
                     url: entry.url,
-                    status: waiting ? `${waiting} waiting` : `${total} preference(s)`,
+                    // A count of things needing attention, and nothing about
+                    // how the system works. "2/5 accepted" means something to
+                    // whoever wrote the gate and nothing to anyone else.
+                    status: waiting ? `${waiting} to review` : "",
                 };
             },
             onClose: async (ctx) => {

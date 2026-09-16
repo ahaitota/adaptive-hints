@@ -165,22 +165,32 @@ export function renderHtml() {
 <script>
 const $ = (id) => document.getElementById(id);
 
-// Scale the panel from its real width, measured, rather than from vw units.
-// Inside an iframe a vw-based clamp is not re-evaluated when the frame is
-// resized until some other repaint happens, so the panel looked stretched
-// until the mouse entered it. Observing the element gives the correct size
-// immediately, on the same frame as the resize.
-function fitToWidth() {
+// Scale the panel from its measured width.
+//
+// Two separate problems here. vw units are not re-evaluated inside an iframe
+// until something forces a repaint, so the size was stale; and setting the
+// font size alone still left the old frame on screen, because nothing had
+// invalidated it. The host repainted on the first mouse move, which is why it
+// looked stretched until then.
+//
+// So: measure, set the size, and rebuild the card. Re-rendering is what
+// actually forces the repaint; the size alone does not.
+let fitPending = false;
+function fitToWidth(rerender) {
   const w = document.documentElement.clientWidth || 360;
   const size = Math.max(12, Math.min(20, 8 + w * 0.0115));
   document.documentElement.style.fontSize = size.toFixed(2) + "px";
+  if (rerender && typeof render === "function" && state) {
+    if (fitPending) return;
+    fitPending = true;
+    requestAnimationFrame(() => { fitPending = false; render(); });
+  }
 }
-fitToWidth();
+fitToWidth(false);
 if (typeof ResizeObserver === "function") {
-  new ResizeObserver(fitToWidth).observe(document.documentElement);
-} else {
-  addEventListener("resize", fitToWidth);
+  new ResizeObserver(() => fitToWidth(true)).observe(document.documentElement);
 }
+addEventListener("resize", () => fitToWidth(true));
 
 let state = { hints: [], task: "", trigger: "", holdout: false, suppressed: [] };
 let lastSig = null;
@@ -256,25 +266,21 @@ function renderInner() {
     ...(rules.trusted || []),
     ...(rules.retired || []),
   ];
-  const waiting = rules.active.length;
-  const learning = (rules.candidates || []).length;
 
-  $("ctx").innerHTML = (deck.length
-    ? \`\${waiting ? \`\${waiting} waiting for you\` : "Nothing waiting"} · \${deck.length} preference\${deck.length === 1 ? "" : "s"}\`
-      + (learning ? \` · \${learning} still being learned\` : "")
-    : "Nothing learned yet. A preference is offered once three different sessions have stated it.")
-    + (state.testMode ? ' <span class="testbadge">TEST MODE — cooldowns &amp; holdout off</span>' : "")
+  // The header carried counts — how many were waiting, how many were still
+  // being learned. Those are the system's bookkeeping, not the user's, and a
+  // number like "0/5" only makes sense to someone who has read the code.
+  $("ctx").innerHTML = (state.testMode ? '<span class="testbadge">TEST MODE — cooldowns &amp; holdout off</span>' : "")
     + (state.fixtureStore ? \` <span class="testbadge">FIXTURE DB — \${esc(state.fixtureStore.split(/[\\\\/]/).pop())}</span>\` : "");
+  $("ctx").style.display = $("ctx").innerHTML ? "" : "none";
 
   const box = $("hints");
   box.innerHTML = "";
 
   if (!deck.length) {
     box.innerHTML = '<div class="empty">Nothing to approve yet. Say how you like to be worked with '
-      + '— "explain in simple words", "ask before committing" — and once three different '
-      + 'sessions have said it, it will appear here.'
-      + (learning ? \` <br><br>\${learning} preference\${learning === 1 ? " is" : "s are"} still gathering evidence.\` : "")
-      + '</div>';
+      + '— "explain in simple words", "ask before committing" — and once a few sessions '
+      + 'have said the same thing, it will appear here.</div>';
   } else {
     if (page >= deck.length) page = 0;
     const r = deck[page];
@@ -294,12 +300,9 @@ function renderInner() {
         <div class="body">
           \${r.ask ? \`as a rule: \${esc(r.rule)}\` : ""}
           \${r.quotes && r.quotes.length ? \`<div class="quote">You said: "\${esc(r.quotes[r.quotes.length - 1])}"</div>\` : ""}
-        </div>
-        <div class="verdict \${r.status === "trusted" ? "yes" : ""}">\${
-          r.status === "trusted" ? \`Applied without asking · \${r.accepts} accepted in a row\`
-          : r.status === "active" ? \`Waiting for your answer · \${r.streak || 0}/5 accepted · \${5 - (r.streak || 0)} more to stop asking\`
-          : \`Turned off · \${r.sessions} session\${r.sessions === 1 ? "" : "s"} of evidence kept\`
-        }</div>
+        \${r.status === "trusted"
+          ? '<div class="verdict yes">Applied automatically</div>'
+          : r.status === "retired" ? '<div class="verdict">Turned off</div>' : ""}
         <div class="actions">
           \${deck.length > 1 && r.status !== "retired" ? \`<select data-merge="\${r.id}"
             title="These two mean the same thing — fold this card into that one, keeping both sets of evidence">
@@ -310,9 +313,9 @@ function renderInner() {
           <div class="spacer"></div>
           \${r.status === "active" ? \`
             <button class="primary" data-act="accept" data-id="\${r.id}"
-              title="Apply this. Five in a row and it stops asking.">Yes, please</button>
+              title="Keep working this way">Yes, please</button>
             <button data-act="reject" data-id="\${r.id}"
-              title="Do not apply it now. Resets the count to zero.">Not this time</button>\` : ""}
+              title="Skip it this time">Not this time</button>\` : ""}
           \${r.status === "retired"
             ? \`<button data-act="restore" data-id="\${r.id}" title="Use this preference again">Restore</button>\`
             : \`<button data-act="retire" data-id="\${r.id}"
