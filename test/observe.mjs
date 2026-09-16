@@ -6,6 +6,7 @@
 // times in one session still promotes nothing.
 //
 //   node observe.mjs --session <id> --rule "Explain in plain language" \
+//        --ask "Would you like me to explain things in plain language?" \
 //        --when session_start --scope global --quote "in simple words please"
 //
 //   node observe.mjs --session <id> --id r1 --quote "simpler please"
@@ -79,6 +80,10 @@ try {
     const rule = addObservation(store, {
         ruleId: flag("id"),
         rule: flag("rule"),
+        // The card asks a question; the agent gets an instruction. Without
+        // this the CLI could only write the instruction, so a preference
+        // recorded by hand showed the user their own words as an order.
+        ask: flag("ask"),
         when,
         scope: flag("scope") || "global",
         repository: flag("repo"),
@@ -86,7 +91,11 @@ try {
         quote: flag("quote") || "",
     });
     saveRules(store);
-    console.log(`\n  ${rule.id}  ${rule.rule}`);
+    console.log(`\n  ${rule.id}  ${rule.ask || rule.rule}`);
+    if (!rule.ask) {
+        console.log(`  no question yet — pass --ask "…?" so the card does not `
+            + `quote the instruction back at the user`);
+    }
     console.log(`  ${distinctSessions(rule)} of 3 sessions   status: ${rule.status}\n`);
     if (rule.status === "candidate" && distinctSessions(rule) >= 3) {
         console.log(`  Ready to activate — run:  node observe.mjs --promote\n`);
