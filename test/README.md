@@ -157,6 +157,55 @@ mines session history needs it too. And **repetition is high precision, very
 low recall**: one true positive out of 164 candidates, because 46 sessions is
 not many and people rarely phrase the same request identically twice.
 
+## Preference learning
+
+An agent **notices**, code **confirms**.
+
+A single session cannot know whether a request is a standing preference or a
+one-off — it has seen one conversation. So the agent may only record an
+**observation**, tagged with its session. Confirmation is arithmetic over
+distinct session IDs, which one session cannot fake.
+
+That guarantee is structural, not a promise: `addObservation` has no status
+field, and `promote()` is the only function that writes one. The first test in
+`rules.test.mjs` fires 50 observations from a single session and asserts that
+**nothing** is activated.
+
+```
+node backfill.mjs              which past sessions have real messages
+node backfill.mjs --batch 1    read one batch, and notice preferences in it
+node observe.mjs --session <id> --rule "..." --when ... --quote "..."
+node observe.mjs --list
+node observe.mjs --promote
+```
+
+There is no keyword matching anywhere in this. The agent is shown the existing
+rule list and either adds weight to an id or writes a new one-line rule; code
+only counts. That is the step that found six preferences in this database where
+word-counting found one.
+
+**Run on real history, it works.** Reading four past sessions produced:
+
+```
+  ACTIVE
+    r1  Explain in plain language                      4 sessions
+    r3  Give me the commands so I can run them myself  3 sessions
+    r4  Open the result so I can see it                3 sessions
+
+  CANDIDATES
+    r2  Do not commit or push without asking first   [2/3 sessions]
+```
+
+`r2` being held back is the system working, not failing — two sessions is
+coincidence, three is a habit.
+
+Reading real sessions also corrected the design: the list of moments a rule can
+fire at was invented, and had nowhere to put *"open it in VS Code so I can see"*.
+`after_changes` exists because the data asked for it.
+
+Rules live in `artifacts/rules.json`, which is gitignored — it is personal data,
+with quotes from real conversations.
+
 ## Files
 
 | File | Purpose |
@@ -169,6 +218,9 @@ not many and people rarely phrase the same request identically twice.
 | `check-real.mjs` | Old vs new settings on the real store, read-only |
 | `hint-value.mjs` | Did accepted guidance reach the agent's answer? Read-only |
 | `repeated-guidance.mjs` | Which instructions does the user repeat across sessions? Read-only |
+| `rules.test.mjs` | Deterministic tests for preference learning |
+| `backfill.mjs` | Prints what the user really typed in past sessions, read-only |
+| `observe.mjs` | Records a noticed preference; lists and promotes rules |
 | `tune-real.mjs` | Sweeps the coverage cutoff against the real store, read-only |
 | `rarity-real.mjs` | Tests whether word frequency can spot an empty question, read-only |
 | `sweep-gates.mjs` | Sweeps coverage cutoff against the score threshold |
