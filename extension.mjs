@@ -95,6 +95,61 @@ function syncedRules() {
     return store;
 }
 
+/**
+ * Which learned moment, if any, a tool call corresponds to.
+ *
+ * The `when` field was being stored and then ignored: only session_start was
+ * ever fired, so four of five real preferences — ask before committing, give
+ * me the commands, open the result, explain before changing code — could never
+ * reach the agent at the moment they were about to matter.
+ *
+ * Matching is on the tool's name and its arguments rather than a fixed list of
+ * tool names, because the names differ between hosts and a list would quietly
+ * stop matching when one is renamed.
+ */
+function momentForTool(toolName, toolArgs, phase) {
+    const name = String(toolName || "").toLowerCase();
+    let args = "";
+    try {
+        args = typeof toolArgs === "string" ? toolArgs : JSON.stringify(toolArgs ?? "");
+    } catch {
+        args = "";
+    }
+    const shell = /bash|shell|powershell|terminal|run_command|execute/.test(name);
+    const edits = /edit|create|write|apply_patch|str_replace|insert/.test(name);
+
+    if (shell && /\bgit\s+(commit|push)\b/.test(args)) {
+        return phase === "pre" ? "before_commit" : null;
+    }
+    if (edits) return phase === "pre" ? "before_changes" : "after_changes";
+    return null;
+}
+
+/**
+ * Deliver the preferences that belong to this moment.
+ *
+ * Trusted ones are stated as instructions; ones still asking are mentioned as
+ * pending so the agent follows them now and the user can answer in the panel.
+ * Returns null when there is nothing to say, so the hook stays silent.
+ */
+function contextForMoment(moment, repository) {
+    const store = syncedRules();
+    const silent = silentRules({ moment, repository }, store);
+    const asking = askingRules({ moment, repository }, store);
+    if (!silent.length && !asking.length) return null;
+
+    const lines = [];
+    if (silent.length) {
+        lines.push(`[adaptive-hints] Remembered preference(s) for right now:\n`
+            + silent.map((r) => `  - ${r.rule}`).join("\n"));
+    }
+    if (asking.length) {
+        lines.push(`[adaptive-hints] Waiting for approval in the panel, follow for now:\n`
+            + asking.map((r) => `  - ${r.rule}`).join("\n"));
+    }
+    return lines.join("\n\n");
+}
+
 /** Current panel state: the active proposal plus derived learning metrics. */
 function currentState(sessionId) {
     const proposal = loadProposal(sessionId);
@@ -906,6 +961,37 @@ session = await joinSession({
                 }
 
                 return { additionalContext: parts.join("\n\n") };
+            } catch {
+                return;
+            }
+        },
+
+        // The moments a preference can ask for, other than session start.
+        // Without these the `when` field was decoration: "ask before
+        // committing" would be stored, confirmed, and then never delivered at
+        // the point a commit was about to happen.
+        onPreToolUse: async (input, invocation) => {
+            try {
+                const moment = momentForTool(input?.toolName, input?.toolArgs, "pre");
+                if (!moment) return;
+                const text = contextForMoment(moment, repositoryOf(session?.workspacePath));
+                if (!text) return;
+                logInjection(invocation?.sessionId, `rules_${moment}`, text);
+                return { additionalContext: text };
+            } catch {
+                // A preference is never worth blocking a tool call over.
+                return;
+            }
+        },
+
+        onPostToolUse: async (input, invocation) => {
+            try {
+                const moment = momentForTool(input?.toolName, input?.toolArgs, "post");
+                if (!moment) return;
+                const text = contextForMoment(moment, repositoryOf(session?.workspacePath));
+                if (!text) return;
+                logInjection(invocation?.sessionId, `rules_${moment}`, text);
+                return { additionalContext: text };
             } catch {
                 return;
             }
