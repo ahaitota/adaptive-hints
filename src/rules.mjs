@@ -95,6 +95,21 @@ function sameRule(a, b) {
 }
 
 /**
+ * The card must ask, not instruct.
+ *
+ * The schema tells the agent to phrase `ask` as a question, but nothing stopped
+ * it pasting the instruction there — and an instruction on a card reads as the
+ * user's own words ordered back at them. A question mark is a crude test, but
+ * it is the one thing every phrasing of a question has in common, and failing
+ * it costs nothing: the card falls back to the instruction, exactly as it does
+ * for rules that carry no question at all.
+ */
+function asQuestion(text) {
+    const t = String(text ?? "").trim();
+    return t.endsWith("?") ? t : null;
+}
+
+/**
  * Record that a preference was stated in one session.
  *
  * Deliberately cannot activate anything. `ruleId` lets the agent add weight to
@@ -122,7 +137,7 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
             // instruction to the user reads as their own words quoted back at
             // them, which is a strange thing to be asked to approve.
             rule: String(rule).trim(),
-            ask: String(ask || "").trim() || null,
+            ask: asQuestion(ask),
             when: MOMENTS.includes(when) ? when : "session_start",
             scope,
             status: "candidate",
@@ -134,7 +149,7 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
         store.rules.push(target);
     } else if (ask && !target.ask) {
         // A later session may phrase the question where an earlier one did not.
-        target.ask = String(ask).trim();
+        target.ask = asQuestion(ask);
     }
 
     target.observations.push({

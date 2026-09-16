@@ -206,6 +206,17 @@ console.log("=".repeat(62));
         addObservation(s, { ruleId: r.id, ask: "Something else entirely?", sessionId: "B", quote: "q" });
         return r.ask === "Would you like me to explain things in plain language?";
     })());
+    check("an instruction pasted into the question field is refused", (() => {
+        const s2 = store();
+        const a = addObservation(s2, {
+            rule: "Do not commit without asking",
+            ask: "Do not commit without asking",   // an order, not a question
+            sessionId: "A", quote: "q",
+        });
+        // Falls back to showing the instruction, as it would with no question
+        // at all — the card must never order the user around in their own words.
+        return a.ask === null;
+    })());
 }
 
 // --- Merge keeps the evidence ----------------------------------------------
