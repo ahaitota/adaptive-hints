@@ -23,7 +23,7 @@ import { renderHtml } from "./src/renderer.mjs";
 import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
-    loadRules, saveRules, addObservation, promote, ruleMenu,
+    loadRules, updateRules, addObservation, promote, ruleMenu,
     mergeRules, retireRule, restoreRule, recordRuleOutcome,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
     distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
@@ -85,10 +85,12 @@ function broadcast() {
  * pass over a few hundred rows.
  */
 function syncedRules() {
-    const store = loadRules();
+    let store = loadRules();
     const before = store.rules.map((r) => r.status).join();
     promote(store);
-    if (store.rules.map((r) => r.status).join() !== before) saveRules(store);
+    if (store.rules.map((r) => r.status).join() !== before) {
+        store = updateRules((fresh) => { promote(fresh); });
+    }
     return store;
 }
 
@@ -466,12 +468,17 @@ async function startServer(instanceId, sessionId) {
                 if (aborted) return;
                 try {
                     const { merge, retire, restore, outcome } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-                    const store = loadRules();
-                    if (merge) mergeRules(store, merge.keep, merge.remove);
-                    if (retire) retireRule(store, retire);
-                    if (restore) restoreRule(store, restore);
-                    if (outcome) {
-                        const r = recordRuleOutcome(store, outcome.id, outcome.outcome);
+                    let answered = null;
+                    updateRules((store) => {
+                        if (merge) mergeRules(store, merge.keep, merge.remove);
+                        if (retire) retireRule(store, retire);
+                        if (restore) restoreRule(store, restore);
+                        if (outcome) {
+                            const r = recordRuleOutcome(store, outcome.id, outcome.outcome);
+                            answered = { rule: r.rule, status: r.status };
+                        }
+                    });
+                    if (answered) {
                         // Take it off the deck for the rest of this
                         // conversation, so the click visibly does something and
                         // a reload cannot answer the same card twice.
@@ -484,19 +491,18 @@ async function startServer(instanceId, sessionId) {
                             sessionId,
                             outcome.outcome === "accepted" ? "preference_accepted" : "preference_declined",
                             outcome.outcome === "accepted"
-                                ? `You accepted: ${r.rule}\n\n`
+                                ? `You accepted: ${answered.rule}\n\n`
                                   + `It is being followed from now on in this session.`
-                                  + (r.status === "trusted"
+                                  + (answered.status === "trusted"
                                       ? ` It has now been accepted enough times that it will stop asking.`
                                       : ``)
-                                : `You declined: ${r.rule}\n\n`
-                                  + (r.status === "declined"
+                                : `You declined: ${answered.rule}\n\n`
+                                  + (answered.status === "declined"
                                       ? `Declined enough times that it will stop offering itself. `
                                         + `Say it again any time to bring it back.`
                                       : `It will be offered again next session.`),
                         );
                     }
-                    saveRules(store);
                     broadcast();
                     res.writeHead(200, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ ok: true }));
@@ -646,18 +652,18 @@ session = await joinSession({
                     },
                     handler: async (ctx) => {
                         const { ruleId, rule, ask, when, scope, quote } = ctx.input ?? {};
-                        const store = loadRules();
-                        const target = addObservation(store, {
-                            ruleId, rule, ask, when, scope: scope || "global",
-                            repository: repositoryOf(session.workspacePath),
-                            sessionId: ctx.sessionId,
-                            quote,
+                        let target, promoted;
+                        const store = updateRules((s) => {
+                            target = addObservation(s, {
+                                ruleId, rule, ask, when, scope: scope || "global",
+                                repository: repositoryOf(session.workspacePath),
+                                sessionId: ctx.sessionId,
+                                quote,
+                            });
+                            // Promotion runs here rather than on a schedule: the
+                            // only moment the count can change is on a write.
+                            promoted = promote(s);
                         });
-                        // Promotion runs here rather than on a schedule: the
-                        // only moment the count can change is when something is
-                        // written, and counting a few hundred rows is free.
-                        const promoted = promote(store);
-                        saveRules(store);
                         broadcast();
                         return {
                             ruleId: target.id,
@@ -685,11 +691,17 @@ session = await joinSession({
                         },
                     },
                     handler: async (ctx) => {
-                        const store = loadRules();
                         const { merge, retire } = ctx.input ?? {};
-                        if (merge) mergeRules(store, merge.keep, merge.remove);
-                        if (retire) retireRule(store, retire);
-                        if (merge || retire) { saveRules(store); broadcast(); }
+                        let store;
+                        if (merge || retire) {
+                            store = updateRules((s) => {
+                                if (merge) mergeRules(s, merge.keep, merge.remove);
+                                if (retire) retireRule(s, retire);
+                            });
+                            broadcast();
+                        } else {
+                            store = loadRules();
+                        }
                         const { trusted, active, candidates } = describe(store);
                         const shape = (r) => ({
                             id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,

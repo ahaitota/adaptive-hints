@@ -10,7 +10,7 @@ import {
     addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
-    distinctSessions, distinctRepositories, loadRules, saveRules, ruleMenu, isOnDeck,
+    distinctSessions, distinctRepositories, loadRules, saveRules, updateRules, ruleMenu, isOnDeck,
 } from "../src/rules.mjs";
 import { join } from "node:path";
 import { rmSync, existsSync } from "node:fs";
@@ -455,6 +455,58 @@ console.log("=".repeat(62));
 
     check("a session_start preference is on deck as soon as the session opens",
         isOnDeck({ id: "r9", when: "session_start" }, none, new Set(["r9@session_start"])) === true);
+}
+
+// --- One shared file, many sessions ----------------------------------------
+//
+// Every session runs its own copy of the extension against one rules file, so
+// a plain load-change-save drops whichever write lands second.
+{
+    const path = join(tmpdir(), `adaptive-hints-concurrent-${process.pid}.json`);
+    rmSync(path, { force: true });
+
+    updateRules((s) => {
+        addObservation(s, { rule: "Plain language", ask: "Plainly?", sessionId: "A", quote: "simple" });
+    }, path);
+
+    // What a second session doing load-change-save at the same time looks like.
+    const stale = loadRules(path);
+    updateRules((s) => {
+        addObservation(s, { rule: "Short answers", ask: "Shorter?", sessionId: "B", quote: "short" });
+    }, path);
+    addObservation(stale, { rule: "Open the result", ask: "Open it?", sessionId: "C", quote: "show me" });
+    saveRules(stale, path);
+
+    check("a stale write is how a preference gets lost",
+        loadRules(path).rules.length === 2, "this documents the old bug");
+
+    rmSync(path, { force: true });
+    updateRules((s) => {
+        addObservation(s, { rule: "Plain language", ask: "Plainly?", sessionId: "A", quote: "simple" });
+    }, path);
+    for (const [rule, who] of [["Short answers", "B"], ["Open the result", "C"], ["Ask first", "D"]]) {
+        updateRules((s) => {
+            addObservation(s, { rule, ask: `${rule}?`, sessionId: who, quote: rule });
+        }, path);
+    }
+    check("every session's preference survives when each write re-reads first",
+        loadRules(path).rules.length === 4,
+        `got ${loadRules(path).rules.length}`);
+
+    check("the mutator sees what other sessions already wrote",
+        updateRules((s) => s.rules.length, path) === 4);
+
+    check("no lock file is left behind", !existsSync(`${path}.lock`));
+
+    rmSync(path, { force: true });
+    check("a write creates the file it needs", (() => {
+        updateRules((s) => { addObservation(s, { rule: "Fresh", sessionId: "E", quote: "new" }); }, path);
+        return existsSync(path) && loadRules(path).rules.length === 1;
+    })());
+
+    check("no temp file is left beside it",
+        !existsSync(`${path}.${process.pid}.tmp`));
+    rmSync(path, { force: true });
 }
 
 console.log("=".repeat(62));

@@ -14,9 +14,9 @@
 // Storage is plain JSON so it can be read, diffed and deleted without tooling,
 // matching how the hint log already works.
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, rmSync, statSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 const COPILOT_HOME = process.env.COPILOT_HOME || join(homedir(), ".copilot");
 export const RULES_DIR = join(COPILOT_HOME, "extensions", "adaptive-hints", "artifacts");
@@ -57,10 +57,86 @@ export function loadRules(path = RULES_PATH) {
     }
 }
 
+function sleepSync(ms) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 export function saveRules(store, path = RULES_PATH) {
-    mkdirSync(RULES_DIR, { recursive: true });
-    writeFileSync(path, JSON.stringify(store, null, 2), "utf8");
+    mkdirSync(dirname(path), { recursive: true });
+    const json = JSON.stringify(store, null, 2);
+    // Write beside the file and rename over it, so a crash mid-write cannot
+    // leave a half-written file where the evidence used to be.
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, json, "utf8");
+    // Windows refuses the rename while another process holds the target, so
+    // retry briefly, then write in place rather than lose what the user said.
+    for (let i = 0; i < 6; i++) {
+        try {
+            renameSync(tmp, path);
+            return store;
+        } catch (err) {
+            if (!["EPERM", "EACCES", "EBUSY"].includes(err?.code)) break;
+            sleepSync(20);
+        }
+    }
+    try {
+        writeFileSync(path, json, "utf8");
+    } finally {
+        try { rmSync(tmp, { force: true }); } catch { /* already gone */ }
+    }
     return store;
+}
+
+// Every session runs its own copy of this extension against one shared file,
+// so a plain load-change-save can drop whichever write lands second.
+const LOCK_WAIT_MS = 2000;
+const LOCK_STALE_MS = 5000;
+
+function acquireLock(lockPath) {
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+        try {
+            const fd = openSync(lockPath, "wx");
+            writeFileSync(fd, String(process.pid));
+            closeSync(fd);
+            return true;
+        } catch (err) {
+            if (err?.code !== "EEXIST") return false;
+            try {
+                // A crashed session must not lock the file forever.
+                if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+                    rmSync(lockPath, { force: true });
+                    continue;
+                }
+            } catch {
+                continue;
+            }
+            if (Date.now() >= deadline) return false;
+            sleepSync(25);
+        }
+    }
+}
+
+/**
+ * Read, change and write the file as one step, so two sessions recording a
+ * preference at the same moment cannot lose one of them.
+ */
+export function updateRules(mutate, path = RULES_PATH) {
+    mkdirSync(dirname(path), { recursive: true });
+    const lockPath = `${path}.lock`;
+    const locked = acquireLock(lockPath);
+    try {
+        const store = loadRules(path);
+        const result = mutate(store);
+        saveRules(store, path);
+        return result === undefined ? store : result;
+    } finally {
+        // Losing the race is not a reason to drop what the user said, so the
+        // lock is best effort: without it this behaves as it always did.
+        if (locked) {
+            try { rmSync(lockPath, { force: true }); } catch { /* already gone */ }
+        }
+    }
 }
 
 function nextId(store) {

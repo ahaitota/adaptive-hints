@@ -14,7 +14,7 @@
 //   node observe.mjs --promote
 
 import {
-    loadRules, saveRules, addObservation, promote, ruleMenu, describe,
+    loadRules, updateRules, addObservation, promote, ruleMenu, describe,
     distinctSessions, distinctRepositories, MOMENTS, RULES_PATH,
 } from "../src/rules.mjs";
 
@@ -54,8 +54,8 @@ if (has("list") || !argv.length) {
 }
 
 if (has("promote")) {
-    const promoted = promote(store);
-    saveRules(store);
+    let promoted = [];
+    updateRules((s) => { promoted = promote(s); });
     console.log(`\n${promoted.length} rule(s) became active:`);
     for (const r of promoted) console.log(`  ${r.id}  ${r.rule}  (when: ${r.when}, scope: ${r.scope})`);
     if (!promoted.length) console.log(`  (nothing reached 3 different sessions)`);
@@ -77,19 +77,21 @@ if (!MOMENTS.includes(when)) {
 }
 
 try {
-    const rule = addObservation(store, {
-        ruleId: flag("id"),
-        rule: flag("rule"),
-        // The card asks a question; the agent gets an instruction. Without
-        // this, a hand-recorded preference quotes the user back at themselves.
-        ask: flag("ask"),
-        when,
-        scope: flag("scope") || "global",
-        repository: flag("repo"),
-        sessionId,
-        quote: flag("quote") || "",
+    let rule;
+    updateRules((s) => {
+        rule = addObservation(s, {
+            ruleId: flag("id"),
+            rule: flag("rule"),
+            // The card asks a question; the agent gets an instruction. Without
+            // this, a hand-recorded preference quotes the user back at themselves.
+            ask: flag("ask"),
+            when,
+            scope: flag("scope") || "global",
+            repository: flag("repo"),
+            sessionId,
+            quote: flag("quote") || "",
+        });
     });
-    saveRules(store);
     console.log(`\n  ${rule.id}  ${rule.ask || rule.rule}`);
     if (!rule.ask) {
         console.log(`  no question yet — pass --ask "…?" so the card does not `
