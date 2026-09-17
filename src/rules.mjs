@@ -51,7 +51,17 @@ export function loadRules(path = RULES_PATH) {
     if (!existsSync(path)) return emptyStore();
     try {
         const data = JSON.parse(readFileSync(path, "utf8"));
-        return data && Array.isArray(data.rules) ? data : emptyStore();
+        if (!data || !Array.isArray(data.rules)) return emptyStore();
+        // "retired" read as if the rule had been erased; it was only switched
+        // off, with every observation kept. Older files still say it.
+        for (const r of data.rules) {
+            if (r.status === "retired") r.status = "paused";
+            if (r.retiredAt !== undefined) {
+                r.pausedAt = r.retiredAt;
+                delete r.retiredAt;
+            }
+        }
+        return data;
     } catch {
         return emptyStore();
     }
@@ -193,7 +203,7 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     let target = ruleId ? store.rules.find((r) => r.id === ruleId) : null;
     if (ruleId && !target) throw new Error(`No such rule: ${ruleId}`);
 
-    // Same sentence again is the same rule. Retired ones included, or turning
+    // Same sentence again is the same rule. Paused ones included, or turning
     // a preference off and restating it would silently create a duplicate.
     if (!target && rule) {
         target = store.rules.find((r) => sameRule(r.rule, rule)) || null;
@@ -230,11 +240,11 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     // Saying it again is the user changing their mind, and needs no button.
     // Back to candidate, never straight to active: promote() still requires
     // three distinct sessions, so one session cannot revive its own rule.
-    if (target.status === "declined" || target.status === "retired") {
+    if (target.status === "declined" || target.status === "paused") {
         target.status = "candidate";
         target.declineStreak = 0;
         delete target.declinedAt;
-        delete target.retiredAt;
+        delete target.pausedAt;
         delete target.activatedAt;
     }
     return target;
@@ -269,7 +279,7 @@ export function recordRuleOutcome(store, id, outcome, {
     if (!["accepted", "rejected"].includes(outcome)) {
         throw new Error(`outcome must be accepted or rejected, got ${outcome}`);
     }
-    if (r.status === "candidate" || r.status === "retired" || r.status === "declined") {
+    if (r.status === "candidate" || r.status === "paused" || r.status === "declined") {
         throw new Error(`Rule ${id} is ${r.status}; only active or trusted rules are offered`);
     }
 
@@ -313,7 +323,7 @@ export function recordRuleOutcome(store, id, outcome, {
 export function promote(store, { sessionsToConfirm = SESSIONS_TO_CONFIRM, reposToGlobalise = REPOS_TO_GLOBALISE } = {}) {
     const promoted = [];
     for (const r of store.rules) {
-        if (r.status === "retired" || r.status === "declined") continue;
+        if (r.status === "paused" || r.status === "declined") continue;
         const sessions = distinctSessions(r);
         if (r.status === "candidate" && sessions >= sessionsToConfirm) {
             r.status = "active";
@@ -363,13 +373,14 @@ export function mergeRules(store, keepId, mergeId) {
     return keep;
 }
 
-export function retireRule(store, id) {
+/** Switch a preference off. Every observation is kept; nothing is erased. */
+export function pauseRule(store, id) {
     const r = store.rules.find((x) => x.id === id);
     if (!r) throw new Error(`No such rule: ${id}`);
     // Status only, never deletion: the evidence is real conversations and a
     // mis-click should not destroy it.
-    r.status = "retired";
-    r.retiredAt = Date.now();
+    r.status = "paused";
+    r.pausedAt = Date.now();
     return r;
 }
 
@@ -410,19 +421,19 @@ export function relaxRule(store, id) {
     return r;
 }
 
-/** Undo a retire. Returns the rule to candidate, and promote() re-decides. */
-export function restoreRule(store, id) {
+/** Undo a pause. Returns the rule to candidate, and promote() re-decides. */
+export function resumeRule(store, id) {
     const r = store.rules.find((x) => x.id === id);
     if (!r) throw new Error(`No such rule: ${id}`);
     r.status = "candidate";
-    delete r.retiredAt;
+    delete r.pausedAt;
     delete r.activatedAt;
     return r;
 }
 
-/** Rules the user turned off, kept so they can be restored. */
-export function retiredRules(store = loadRules()) {
-    return store.rules.filter((r) => r.status === "retired");
+/** Rules switched off, kept whole so they can come back. */
+export function pausedRules(store = loadRules()) {
+    return store.rules.filter((r) => r.status === "paused");
 }
 
 // --- What the user accepted in this conversation ---------------------------
@@ -514,7 +525,7 @@ export { SAID_DIR };
 /** The list shown to the agent so it can reuse an id instead of inventing one. */
 export function ruleMenu(store = loadRules()) {
     return store.rules
-        .filter((r) => r.status !== "retired" && r.status !== "declined")
+        .filter((r) => r.status !== "paused" && r.status !== "declined")
         .map((r) => `  ${r.id}  ${r.rule}  (${distinctSessions(r)} sessions, ${r.status})`)
         .join("\n");
 }
@@ -536,8 +547,8 @@ export function describe(store = loadRules()) {
         active: by("active"),
         candidates: by("candidate"),
         // Things the user has turned away from, by declining repeatedly or by
-        // an explicit retire. Kept, never shown in the deck.
-        dropped: store.rules.filter((r) => r.status === "declined" || r.status === "retired"),
+        // an explicit pause. Kept, never shown in the deck.
+        dropped: store.rules.filter((r) => r.status === "declined" || r.status === "paused"),
         total: store.rules.length,
     };
 }

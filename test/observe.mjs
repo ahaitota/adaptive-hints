@@ -57,7 +57,7 @@ if (has("list") || !argv.length) {
             }
         }
         if (dropped.length) {
-            console.log(`\n  STOPPED ASKING (declined repeatedly; say it again to bring it back)`);
+            console.log(`\n  SWITCHED OFF (declined repeatedly, or paused; say it again to bring it back)`);
             for (const r of dropped) console.log(`    ${r.id}  ${r.rule}`);
         }
         console.log("");

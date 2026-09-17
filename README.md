@@ -110,7 +110,7 @@ preference with real history this is invisible — three sessions already vouche
 for it, so the next promotion pass restores it immediately.
 
 It matters for the thin case. A rule recorded by one session, then judged a
-one-off and retired, used to come back as **active** the moment it was restated
+one-off and paused, used to come back as **active** the moment it was restated
 — one session promoting its own rule, which is the single thing this design
 promises cannot happen. Found by testing with a throwaway *"reply in Czech"*
 preference.
@@ -133,15 +133,20 @@ undo its own misreading and nothing else: it can neither manufacture influence
 nor erase anyone else's.
 
 This happens **silently**. A candidate is invisible and unapplied, so there is
-nothing to ask about — and *"shall I retire this rule?"* is meaningless to
+nothing to ask about — and *"shall I switch this rule off?"* is meaningless to
 anyone who has not read the code.
 
-**The agent cannot retire a preference at all.** It once could, and used that
-instead of the undo it actually needed. A preference three sessions confirmed
-is the user's; the way to stop it is to decline the card three times, which the
-user does deliberately and can reverse by saying the thing again. `forget` and
-`retire` look similar and are opposites: one erases the agent's own guess, the
-other overrides the user's settled preference.
+**The agent cannot switch a preference off at all.** It once could, and used
+that instead of the undo it actually needed. A preference three sessions
+confirmed is the user's; the way to stop it is to decline the card three times,
+which the user does deliberately and can reverse by saying the thing again.
+`forget` and `pause` look similar and are opposites: one erases the agent's own
+guess, the other overrides the user's settled preference.
+
+**On the name.** This state used to be called *retired*, which read as though
+the rule had been thrown away. Nothing is thrown away — every observation is
+kept and the preference can come back. It is now **paused**. Files written
+under the old name still load; `retired` is migrated to `paused` on read.
 
 ### When a preference arrives
 

@@ -1027,7 +1027,7 @@ session = await joinSession({
                 // storage. Judging whether two sentences mean the same thing is
                 // the agent's job. Asked occasionally rather than every session,
                 // because there is usually nothing to do.
-                const tidy = store.rules.filter((r) => r.status !== "retired");
+                const tidy = store.rules.filter((r) => r.status !== "paused");
                 if (tidy.length >= 4 && Math.random() < 0.25) {
                     parts.push(
                         `[adaptive-hints] While you are here: do any of these learned preferences mean `

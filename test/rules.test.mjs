@@ -7,7 +7,7 @@
 //   node rules.test.mjs
 
 import {
-    addObservation, promote, rulesFor, mergeRules, retireRule, restoreRule,
+    addObservation, promote, rulesFor, mergeRules, pauseRule, resumeRule,
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, updateRules, ruleMenu, isOnDeck,
@@ -309,13 +309,13 @@ console.log("=".repeat(62));
     addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
     addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
     promote(s);
-    retireRule(s, r.id);
+    pauseRule(s, r.id);
     check("turning off keeps every observation", r.observations.length === 3);
-    restoreRule(s, r.id);
+    resumeRule(s, r.id);
     promote(s);
     check("restoring brings it straight back, no new mentions needed", r.status === "active");
 
-    retireRule(s, r.id);
+    pauseRule(s, r.id);
     const again = addObservation(s, { rule: "Test rule", sessionId: "D", quote: "q" });
     check("re-stating it while off does not create a second rule",
         again.id === r.id && s.rules.length === 1, `${s.rules.length} rules`);
@@ -390,21 +390,21 @@ console.log("=".repeat(62));
     check("a merged rule can now be promoted", promote(s).length === 1);
 }
 
-// --- Retired rules stay dead ------------------------------------------------
+// --- Paused rules stay dead ------------------------------------------------
 {
     const s = store();
     const r = addObservation(s, { rule: "Bad rule", when: "session_start", sessionId: "A", quote: "q" });
     addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
     addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
     promote(s);
-    retireRule(s, r.id);
-    check("a retired rule stops firing", rulesFor({ moment: "session_start" }, s).length === 0);
-    check("a retired rule is not re-promoted", promote(s).length === 0 && r.status === "retired");
-    check("a retired rule is hidden from the agent's menu", !ruleMenu(s).includes(r.id));
-    check("a retired rule can be restored", (() => {
-        restoreRule(s, r.id);
+    pauseRule(s, r.id);
+    check("a paused rule stops firing", rulesFor({ moment: "session_start" }, s).length === 0);
+    check("a paused rule is not re-promoted", promote(s).length === 0 && r.status === "paused");
+    check("a paused rule is hidden from the agent's menu", !ruleMenu(s).includes(r.id));
+    check("a paused rule can be restored", (() => {
+        resumeRule(s, r.id);
         return r.status === "candidate" && promote(s).length === 1;
-    })(), "retire must be undoable — the evidence is real conversations");
+    })(), "pausing must be undoable — the evidence is real conversations");
 }
 
 // --- Bad input is refused ---------------------------------------------------
@@ -550,17 +550,17 @@ console.log("=".repeat(62));
 
 // --- Reviving a preference cannot bypass the session guarantee -------------
 //
-// Found by the user's Czech test: a rule retired with one observation came
+// Found by the user's Czech test: a rule paused with one observation came
 // straight back as active when restated, so a single session promoted its own
 // rule. Revival now returns it to candidate and promote() still decides.
 {
     const s = store();
     const r = addObservation(s, { rule: "Reply in Czech", sessionId: "S1", quote: "in czech" });
     promote(s);
-    retireRule(s, r.id);
+    pauseRule(s, r.id);
     addObservation(s, { rule: "Reply in Czech", sessionId: "S1", quote: "czech again" });
     promote(s);
-    check("one session restating a retired rule does NOT reactivate it",
+    check("one session restating a paused rule does NOT reactivate it",
         r.status === "candidate", `status was ${r.status}`);
 
     addObservation(s, { rule: "Reply in Czech", sessionId: "S2", quote: "czech" });
