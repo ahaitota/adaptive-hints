@@ -11,7 +11,7 @@ import {
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, updateRules, ruleMenu, isOnDeck,
-    acceptedIn, markAccepted, ACCEPTED_DIR, forgetObservation,
+    acceptedIn, markAccepted, ACCEPTED_DIR, forgetObservation, relaxRule,
 } from "../src/rules.mjs";
 import { join } from "node:path";
 import { rmSync, existsSync } from "node:fs";
@@ -620,6 +620,40 @@ console.log("=".repeat(62));
     }
     check("forgetting requires a session, so it cannot wipe a rule wholesale",
         needsSession && s3.rules.length === 1);
+}
+
+// --- Turning off a silently applied preference -----------------------------
+//
+// A trusted rule applies without asking, so there was no way to stop it except
+// waiting for its moment to come round. Turning it off is not a rejection: the
+// user is refusing the silence, not the preference.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Reply in Czech", sessionId: "A", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "B", quote: "q" });
+    addObservation(s, { ruleId: r.id, sessionId: "C", quote: "q" });
+    promote(s);
+    for (let i = 0; i < 5; i++) recordRuleOutcome(s, r.id, "accepted");
+    check("five accepts in a row earns silence", r.status === "trusted");
+
+    relaxRule(s, r.id);
+    check("turning it off goes back to asking, not to declined",
+        r.status === "active", `status=${r.status}`);
+    check("it must earn silence again from zero", r.acceptStreak === 0);
+    check("no rejection is recorded, because none was expressed",
+        r.rejects === 0 && r.declineStreak === 0);
+    check("its accept history is kept", r.accepts === 5);
+
+    let blocked = false;
+    try {
+        relaxRule(s, r.id);
+    } catch {
+        blocked = true;
+    }
+    check("a rule that already asks cannot be turned off again", blocked);
+
+    for (let i = 0; i < 5; i++) recordRuleOutcome(s, r.id, "accepted");
+    check("accepting five more times earns silence back", r.status === "trusted");
 }
 
 console.log("=".repeat(62));

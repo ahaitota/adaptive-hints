@@ -394,6 +394,22 @@ export function forgetObservation(store, id, sessionId) {
     return { id, removed, deleted };
 }
 
+/**
+ * Stop applying a preference silently and go back to asking each time.
+ * Not a rejection: the user is refusing the silence, not the preference.
+ */
+export function relaxRule(store, id) {
+    const r = store.rules.find((x) => x.id === id);
+    if (!r) throw new Error(`No such rule: ${id}`);
+    if (r.status !== "trusted") {
+        throw new Error(`Rule ${id} is ${r.status}; only a silently applied preference can be asked again`);
+    }
+    r.status = "active";
+    r.acceptStreak = 0;
+    delete r.trustedAt;
+    return r;
+}
+
 /** Undo a retire. Returns the rule to candidate, and promote() re-decides. */
 export function restoreRule(store, id) {
     const r = store.rules.find((x) => x.id === id);

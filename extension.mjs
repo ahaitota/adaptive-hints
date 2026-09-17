@@ -24,7 +24,7 @@ import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, updateRules, addObservation, promote, ruleMenu,
-    mergeRules, recordRuleOutcome, forgetObservation,
+    mergeRules, recordRuleOutcome, forgetObservation, relaxRule,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
     acceptedIn, markAccepted,
     distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
@@ -49,7 +49,14 @@ const servers = new Map(); // instanceId -> { server, url, clients:Set }
 function repositoryOf(workspacePath) {
     if (!workspacePath) return null;
     const parts = String(workspacePath).replace(/\\/g, "/").split("/").filter(Boolean);
-    return parts.length ? parts[parts.length - 1] : null;
+    const last = parts.length ? parts[parts.length - 1] : null;
+    if (!last) return null;
+    // A chat session's workspace is session-state/<uuid>, so the last segment
+    // is a session id. Counting those as repositories globalised rules by
+    // accident, since every session looks like a new one.
+    const isSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last);
+    if (isSessionId || parts.includes("session-state")) return null;
+    return last;
 }
 
 // Restore a fixture database chosen in a previous run. Without this the
@@ -506,15 +513,34 @@ async function startServer(instanceId, sessionId) {
             req.on("end", () => {
                 if (aborted) return;
                 try {
-                    const { merge, outcome } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+                    const { merge, outcome, relax } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
                     let answered = null;
+                    let relaxed = null;
                     updateRules((store) => {
                         if (merge) mergeRules(store, merge.keep, merge.remove);
+                        if (relax) relaxed = relaxRule(store, relax).rule;
                         if (outcome) {
                             const r = recordRuleOutcome(store, outcome.id, outcome.outcome);
                             answered = { rule: r.rule, status: r.status };
                         }
                     });
+                    if (relaxed) {
+                        // It was already in the agent's context this session,
+                        // so stopping has to be said, not just recorded.
+                        queueAcceptedContext(
+                            sessionId,
+                            `[adaptive-hints] The user turned off this preference just now. `
+                            + `Stop following it for the rest of this session:\n  - ${relaxed}\n\n`
+                            + `Say nothing about it.`,
+                        );
+                        logInjection(
+                            sessionId,
+                            "preference_relaxed",
+                            `You turned off: ${relaxed}\n\n`
+                            + `It stops now, and will ask again next session instead of `
+                            + `applying on its own.`,
+                        );
+                    }
                     if (answered) {
                         // Take it off the deck for the rest of this
                         // conversation, so the click visibly does something and

@@ -90,6 +90,32 @@ check("arguments that cannot be serialised do not throw", (() => {
         "the patterns were changed in one place only");
 }
 
+// --- A session workspace is not a repository -------------------------------
+//
+// repositoryOf takes the last path segment. A chat session's workspace is
+// session-state/<uuid>, so every session looked like a brand new repository,
+// and three of them would globalise a repo-scoped rule by accident.
+{
+    const repositoryOf = (workspacePath) => {
+        if (!workspacePath) return null;
+        const parts = String(workspacePath).replace(/\\/g, "/").split("/").filter(Boolean);
+        const last = parts.length ? parts[parts.length - 1] : null;
+        if (!last) return null;
+        const isSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last);
+        if (isSessionId || parts.includes("session-state")) return null;
+        return last;
+    };
+
+    check("a real checkout is a repository",
+        repositoryOf("C:/Users/me/code/test-view") === "test-view");
+    check("a session workspace is not",
+        repositoryOf("C:/Users/me/.copilot/session-state/c253e92e-43af-46f3-8be6-26ad9c42bd57") === null);
+    check("a uuid folder anywhere is not",
+        repositoryOf("/tmp/c253e92e-43af-46f3-8be6-26ad9c42bd57") === null);
+    check("no workspace is not a repository either",
+        repositoryOf(null) === null && repositoryOf("") === null);
+}
+
 console.log("=".repeat(58));
 console.log(`${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

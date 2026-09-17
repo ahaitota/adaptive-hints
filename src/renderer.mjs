@@ -154,6 +154,14 @@ export function renderHtml() {
   .eff ul { list-style: none; margin: 0.4rem 0 0; padding: 0; }
   .eff li { padding: 0.25rem 0; font-size: 0.82rem; border-top: 1px solid var(--border-color-default, #30363d); }
   .eff .meta { color: var(--text-color-muted, #8b949e); font-size: 0.74rem; }
+  .eff .effrow { display: flex; align-items: center; gap: 0.5rem; }
+  .eff .effrow > div:first-child { flex: 1; min-width: 0; }
+  .eff .effstop {
+    flex: none; font-size: 0.74rem; padding: 0.2rem 0.5rem; border-radius: 0.4rem;
+    background: transparent; color: var(--text-color-muted, #8b949e);
+    border: 1px solid var(--border-color-default, #30363d); cursor: pointer;
+  }
+  .eff .effstop:hover { color: var(--text-color-default, #1f2328); }
 </style>
 </head>
 <body>
@@ -232,9 +240,26 @@ function renderEffect() {
     : "Being followed now — nothing yet";
   $("efflist").innerHTML = list.map(r => \`
     <li>
-      <div>\${esc(r.rule)}</div>
-      <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · applied automatically" : ""}</div>
+      <div class="effrow">
+        <div>
+          <div>\${esc(r.rule)}</div>
+          <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · applied automatically" : ""}</div>
+        </div>
+        \${r.status === "trusted"
+          ? \`<button class="effstop" data-relax="\${r.id}"
+               title="Stop doing this on its own. It will ask again next session.">Turn off</button>\`
+          : ""}
+      </div>
     </li>\`).join("");
+
+  $("efflist").querySelectorAll("[data-relax]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    await fetch("/rules", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relax: b.dataset.relax }),
+    });
+    await load();
+  });
 }
 
 function renderSent() {
