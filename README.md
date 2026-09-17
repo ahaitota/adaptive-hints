@@ -148,6 +148,22 @@ the rule had been thrown away. Nothing is thrown away — every observation is
 kept and the preference can come back. It is now **paused**. Files written
 under the old name still load; `retired` is migrated to `paused` on read.
 
+**Nothing can pause a preference any more.** All three routes are gone: the
+*Turn off* button, the agent's `retire`, and the `/rules` endpoint. `declined`
+— three declines in a row — is now the only way a preference stops.
+
+`paused` is kept as a state the code can **read**, because older `rules.json`
+files contain it and must still load correctly. `resumeRule` is the repair
+path, and was needed once for real: a rule paused by the old agent tool sat
+with a status its evidence did not support — one session, which is a
+`candidate` — until it was resumed back.
+
+That mismatch surfaced three separate times before it was fixed: first the name
+read as *erased*, then the CLI filed it under *declined repeatedly*, then the
+status itself disagreed with the data. A state that can be entered but no
+longer earned will keep producing questions, because every label describing it
+is a claim about something that cannot happen.
+
 ### When a preference arrives
 
 A preference carries the moment it belongs to, because the right moment is part
