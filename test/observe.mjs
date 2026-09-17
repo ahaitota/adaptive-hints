@@ -33,7 +33,7 @@ if (has("list") || !argv.length) {
     if (!store.rules.length) {
         console.log(`  Nothing learned yet.\n`);
     } else {
-        console.log(`  APPLIED AUTOMATICALLY (accepted 5 times running, no longer asks)`);
+        console.log(`  YOU APPROVED THESE 5 TIMES, SO THEY NO LONGER ASK`);
         if (!trusted.length) console.log(`    none yet`);
         for (const r of trusted) {
             console.log(`    ${r.id}  ${r.rule}`);

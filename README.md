@@ -58,7 +58,7 @@ that nothing is activated.
 | --- | --- | --- |
 | **candidate** | fewer than 3 sessions | invisible, gathering evidence |
 | **active** | 3 different sessions state it | offered on a card; applied only if you accept |
-| **trusted** | 5 accepts in a row | applied automatically, without asking |
+| **trusted** | 5 accepts in a row | applies without asking, because the user approved it 5 times |
 | **declined** | 3 declines in a row | not shown; returns to candidate if stated again |
 
 Repetition and approval answer different questions. Repetition shows you
@@ -532,8 +532,8 @@ five times running, and taking the screen would undo that. It only refreshes a
 panel that is already open.
 
 Closing the panel therefore means *not now*, and is respected for the rest of
-the session — the same principle as declining a card rather than a Turn off
-button.
+the session — the same principle as declining a card rather than an *Ask me
+again* button that manages storage.
 
 ### Seeing what is in force
 
@@ -549,17 +549,24 @@ applies and which have stopped asking:
 
 ```
 Being followed now — 3
-  Explain in plain language          whole session · applied automatically  [Turn off]
+  Explain in plain language      whole session · you approved this 5 times, so it no longer asks  [Ask me again]
   Open the result so I can see it    after a change
   Give me the commands               before a commit
 ```
 
-A preference that **applies automatically** carries a **Turn off** button, and
-it is the only thing in this list that does. A trusted rule never shows a card,
-so without it the only way to stop one was to wait for its moment to come round
+A preference that no longer asks carries an **Ask me again** button, and it is
+the only thing in this list that does. A trusted rule never shows a card, so
+without it the only way to stop one was to wait for its moment to come round
 and press Decline — the list could show it but not act on it.
 
-Turning off sends the rule back to **active**: it asks again next session and
+**The wording credits the user, not the machine.** It first read *"applied
+automatically"*, which states a true fact in words that imply the system
+decided by itself. It did not: the user approved the same preference five
+separate times, and the fifth accept is what turned the asking off. Reported as
+*"why does it say that it is applied automatically if I saw the hint for it and
+accepted it?"* — a fair question about a label that took credit for their work.
+
+Pressing **Ask me again** sends the rule back to **active**: it asks again next session and
 must earn silence from zero. **No rejection is recorded.** The user is refusing
 the silence, not the preference, and storing an opinion they did not express
 would be the same error as treating silence as consent. The accept history is
@@ -600,8 +607,10 @@ The card deliberately shows **none of the system's bookkeeping**. It carried
 *"0/5 accepted · 5 more to stop asking"* and a header counting preferences by
 stage; those numbers mean something to whoever wrote the gate and nothing to
 anyone using it. The counting still happens, quietly. The one exception is a
-preference that has earned silence, which says *"Applied automatically"* —
-worth knowing, because otherwise it changes behaviour invisibly.
+preference that has earned silence, which says *"You approved this 5 times, so
+it no longer asks"* — worth knowing, because otherwise it changes behaviour
+invisibly. The number appears here on purpose: it is the user's own record of
+approvals, not an internal threshold.
 
 Cards are a fixed height with the buttons pinned to the bottom, and the panel
 scales with its measured width and re-renders on resize. All three exist

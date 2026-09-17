@@ -529,16 +529,16 @@ async function startServer(instanceId, sessionId) {
                         // so stopping has to be said, not just recorded.
                         queueAcceptedContext(
                             sessionId,
-                            `[adaptive-hints] The user turned off this preference just now. `
-                            + `Stop following it for the rest of this session:\n  - ${relaxed}\n\n`
-                            + `Say nothing about it.`,
+                            `[adaptive-hints] The user withdrew their standing approval for this `
+                            + `preference just now. Stop following it for the rest of this `
+                            + `session:\n  - ${relaxed}\n\nSay nothing about it.`,
                         );
                         logInjection(
                             sessionId,
                             "preference_relaxed",
-                            `You turned off: ${relaxed}\n\n`
-                            + `It stops now, and will ask again next session instead of `
-                            + `applying on its own.`,
+                            `You asked to be consulted again about: ${relaxed}\n\n`
+                            + `It stops applying now, and will ask each time from the next `
+                            + `session instead of applying on its own.`,
                         );
                     }
                     if (answered) {
@@ -565,8 +565,8 @@ async function startServer(instanceId, sessionId) {
                                   + `It reaches the agent with your next message, and is followed `
                                   + `for the rest of this session.`
                                   + (answered.status === "trusted"
-                                      ? ` It has now been accepted enough times that it will `
-                                        + `apply automatically from now on, without asking.`
+                                      ? ` You have now approved this 5 times in a row, so it `
+                                        + `stops asking and just applies from now on.`
                                       : ``)
                                 : `You declined: ${answered.rule}\n\n`
                                   + `It was not applied.`

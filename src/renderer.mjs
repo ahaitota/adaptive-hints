@@ -247,11 +247,11 @@ function renderEffect() {
       <div class="effrow">
         <div>
           <div>\${esc(r.rule)}</div>
-          <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · applied automatically" : ""}</div>
+          <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · you approved this 5 times, so it no longer asks" : ""}</div>
         </div>
         \${r.status === "trusted"
           ? \`<button class="effstop" data-relax="\${r.id}"
-               title="Stop doing this on its own. It will ask again next session.">Turn off</button>\`
+               title="Go back to being asked each time.">Ask me again</button>\`
           : ""}
       </div>
     </li>\`).join("");
@@ -360,7 +360,7 @@ function renderInner() {
           \${r.quotes && r.quotes.length ? \`You said: "\${esc(r.quotes[r.quotes.length - 1])}"\` : ""}
         </div>
         \${r.status === "trusted"
-          ? '<div class="verdict yes">Applied automatically</div>'
+          ? '<div class="verdict yes">You approved this 5 times, so it no longer asks</div>'
           : '<div class="verdict">Not applied until you accept it</div>'}
         <div class="actions">
           <div class="spacer"></div>
