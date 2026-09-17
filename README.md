@@ -53,17 +53,22 @@ node test/observe.mjs --list  # what it has learned so far — empty at first
 `Nothing learned yet`, which is correct: it takes three separate sessions
 before anything is offered.
 
-Open the **Adaptive hints** panel from the app to see preferences as they
-appear. It opens by itself the first time there is something to answer.
+The panel **opens by itself** the first time there is something to answer, so
+you do not need to watch for it. You can also open **Adaptive hints** from the
+app yourself at any time — worth doing early, since a new install has nothing
+to show until three sessions agree.
 
-## Where your data lives
+## Where the data lives
+
+Each person's preferences stay on their own machine, under their own home
+folder:
 
 ```
 ~/.copilot/extensions/adaptive-hints/artifacts/
 ```
 
-Quotes from your own conversations, so it is gitignored and never leaves your
-machine. Delete the folder to reset everything.
+It holds quotes from your conversations, so it is gitignored and never leaves
+your machine. Nothing is sent anywhere. Delete the folder to reset everything.
 
 ## More
 
