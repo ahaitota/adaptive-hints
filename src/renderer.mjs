@@ -233,7 +233,7 @@ function renderEffect() {
   $("efflist").innerHTML = list.map(r => \`
     <li>
       <div>\${esc(r.rule)}</div>
-      <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · no longer asks" : ""}</div>
+      <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · no longer asks" : " · asks to keep it"}</div>
     </li>\`).join("");
 }
 
@@ -330,7 +330,9 @@ function renderInner() {
         <div class="body">
           \${r.quotes && r.quotes.length ? \`You said: "\${esc(r.quotes[r.quotes.length - 1])}"\` : ""}
         </div>
-        \${r.status === "trusted" ? '<div class="verdict yes">Applied automatically</div>' : ""}
+        \${r.status === "trusted"
+          ? '<div class="verdict yes">Already doing this, and no longer asking</div>'
+          : '<div class="verdict yes">Already doing this — accept to keep it</div>'}
         <div class="actions">
           <div class="spacer"></div>
           \${r.status === "active" ? \`

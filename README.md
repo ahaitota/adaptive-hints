@@ -66,6 +66,27 @@ Repetition and approval answer different questions. Repetition shows you
 firing it at that moment helps, because you were never asked. So confirmation
 and silence are earned separately.
 
+**A rule is applied from the moment it becomes active — before you accept it.**
+The agent is told `follow for now` along with the card. The accept is not
+permission to start; it is a judgement on something that already happened.
+
+That is deliberate. Waiting for a click would ask you to approve a hypothetical
+— *would this have been useful?* — which is exactly the question repetition has
+already answered three times over. Applying it first turns the card into
+something you can actually judge: you have just seen the wording and the timing
+in practice, and the click says whether to keep them.
+
+So the two applied stages differ only in whether they ask:
+
+| | Applied? | Asks? |
+| --- | --- | --- |
+| **active** | yes | every time — *keep this?* |
+| **trusted** | yes | no |
+
+The risk this accepts is that a badly worded rule acts once before you can stop
+it. The price of the alternative is that a preference you stated in three
+separate conversations still does nothing until you find a panel and click.
+
 One rejection resets the streak and pulls a trusted rule back to asking. A rule
 that is wrong once will be wrong again, and silence is exactly when being wrong
 costs most. Accepts must be **consecutive** — six accepts around one rejection
