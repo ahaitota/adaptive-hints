@@ -70,7 +70,6 @@ folder:
 It holds quotes from your conversations, so it is gitignored and never leaves
 your machine. Nothing is sent anywhere. Delete the folder to reset everything.
 
-## More
-
-- **[DESIGN.md](DESIGN.md)** — how it works and why each decision was made,
-  including the mistakes that shaped it.
+The same applies to `docs/`, which holds the design notes and evaluation plan.
+They quote real conversations, so they stay local rather than shipping with the
+code.
