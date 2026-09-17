@@ -153,6 +153,28 @@ deletable without tooling, like the hint log. Which cards have been answered in
 a given conversation lives beside it in `artifacts/answered/<sessionId>.json`.
 Both hold quotes from real conversations, so both are gitignored.
 
+The agent never chooses where any of this goes. `remember_preference` takes
+content only — no path — and the extension resolves
+`$COPILOT_HOME/extensions/adaptive-hints/artifacts/rules.json`, falling back to
+`~/.copilot`. One file for every session on purpose: confirming a preference
+means counting **distinct sessions**, which is impossible if each session keeps
+its own copy. Separation comes from the rows, which each carry their
+`sessionId` and `repository`.
+
+Every session runs its own copy of this extension, so that one file has many
+writers. Measured with 12 concurrent processes doing load-change-save, **8 of
+12 preferences were lost.** Writes therefore go through `updateRules()`, which
+takes a best-effort lock, re-reads, applies the change and writes atomically.
+Failing to get the lock is never a reason to discard what the user said, so
+without it the behaviour is exactly what it was before; a lock left by a
+crashed session is stolen after five seconds.
+
+The atomic write needs one Windows-specific detail: `renameSync` throws `EPERM`
+when another process holds the target, so it retries and then writes in place
+rather than losing the change. The first version of this fix did not, and
+crashed under the very concurrency it was added to survive. After: **16 of 16
+concurrent writes survive.**
+
 ## What it does
 
 ```
