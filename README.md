@@ -469,8 +469,9 @@ to walk through them: waiting for an answer first, then the ones already
 applied silently.
 
 Each card leads with the question and quotes your own words as evidence.
-**Accept** and **Decline** are the only choices; a preference that is already
-applied silently offers **Ask me again** instead.
+**Accept** and **Decline** are the only choices, because a card is only ever
+shown for a preference that is genuinely asking. A preference that applies
+silently has no card; **Ask me again** lives beside it in *Being followed now*.
 
 The card used to show the instruction too — *"as a rule: Give me the commands
 so I can run them myself"* under *"Would you like the commands, so you can run
@@ -606,11 +607,16 @@ preferences, and only sometimes, because usually there is nothing to do.
 The card deliberately shows **none of the system's bookkeeping**. It carried
 *"0/5 accepted · 5 more to stop asking"* and a header counting preferences by
 stage; those numbers mean something to whoever wrote the gate and nothing to
-anyone using it. The counting still happens, quietly. The one exception is a
-preference that has earned silence, which says *"You approved this 5 times, so
-it no longer asks"* — worth knowing, because otherwise it changes behaviour
-invisibly. The number appears here on purpose: it is the user's own record of
-approvals, not an internal threshold.
+anyone using it. The counting still happens, quietly.
+
+**A preference that has earned silence gets no card at all.** It used to appear
+in the deck with its own verdict, which put a question — *"Would you like me to
+explain things in plain language?"* — above a line saying it no longer asks.
+Reported simply as *"why is it here? it is supposed to be silent and only be
+visible in Being followed now"*, which is exactly right: the card slot exists
+for things that need an answer, and a trusted rule needs none. It lives in the
+list below, where *"you approved this 5 times, so it no longer asks"* explains
+itself and **Ask me again** undoes it.
 
 Cards are a fixed height with the buttons pinned to the bottom, and the panel
 scales with its measured width and re-renders on resize. All three exist

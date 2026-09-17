@@ -314,10 +314,9 @@ function render() {
 
 function renderInner() {
   const rules = state.rules || { trusted: [], active: [], candidates: [] };
-  // Only what the user can act on. Preferences still gathering evidence have
-  // not been offered, and ones they have turned away from should not keep
-  // reappearing at the end of the list — a dead card is worse than no card.
-  const deck = [...rules.active, ...(rules.trusted || [])];
+  // Only what the user can act on. A preference that no longer asks belongs in
+  // the list below, not in a card slot whose whole purpose is a question.
+  const deck = rules.active || [];
 
   // The header carried counts — how many were waiting, how many were still
   // being learned. Those are the system's bookkeeping, not the user's, and a
@@ -359,18 +358,13 @@ function renderInner() {
         <div class="body">
           \${r.quotes && r.quotes.length ? \`You said: "\${esc(r.quotes[r.quotes.length - 1])}"\` : ""}
         </div>
-        \${r.status === "trusted"
-          ? '<div class="verdict yes">You approved this 5 times, so it no longer asks</div>'
-          : '<div class="verdict">Not applied until you accept it</div>'}
+        <div class="verdict">Not applied until you accept it</div>
         <div class="actions">
           <div class="spacer"></div>
-          \${r.status === "active" ? \`
-            <button class="primary" data-act="accept" data-id="\${r.id}"
-              title="Keep working this way">Accept</button>
-            <button data-act="reject" data-id="\${r.id}"
-              title="Not this time. Decline it a few times and it stops asking.">Decline</button>\`
-          : \`<button data-act="reject" data-id="\${r.id}"
-              title="Go back to being asked each time">Ask me again</button>\`}
+          <button class="primary" data-act="accept" data-id="\${r.id}"
+            title="Keep working this way">Accept</button>
+          <button data-act="reject" data-id="\${r.id}"
+            title="Not this time. Decline it a few times and it stops asking.">Decline</button>
         </div>
       </div>\`;
     box.appendChild(el);
