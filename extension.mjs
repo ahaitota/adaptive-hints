@@ -241,6 +241,11 @@ function currentState(sessionId) {
                 // Confirmed, but their moment has not come round yet. Lets the
                 // empty panel say "not now" rather than "nothing learned".
                 waitingForMoment: ready.filter((r) => !delivered.has(`${r.id}@${r.when}`)).length,
+                // Everything the agent will follow this session, regardless of
+                // moment or whether its card has been answered and dismissed.
+                inEffect: [...trusted, ...active].map((r) => ({
+                    id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
+                })),
             };
         })(),
         hints,
@@ -710,7 +715,7 @@ session = await joinSession({
                 },
                 {
                     name: "preferences",
-                    description: "List learned preferences, and merge or retire one. Read-only unless merge/retire is given.",
+                    description: "List the learned preferences currently being followed, and optionally merge or retire one. Call this whenever the user asks what preferences, rules or settings you are applying. Read-only unless merge/retire is given.",
                     inputSchema: {
                         type: "object",
                         properties: {

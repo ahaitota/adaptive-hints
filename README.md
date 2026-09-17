@@ -462,6 +462,32 @@ Closing the panel therefore means *not now*, and is respected for the rest of
 the session — the same principle as declining a card rather than a Turn off
 button.
 
+### Seeing what is in force
+
+Cards are momentary by design: they appear at their moment and leave once
+answered. That left no way to answer *"which preferences are you following
+right now?"* — a gap the auto-opening panel made worse, since the chat no
+longer mentions them either.
+
+The panel therefore carries a **Being followed now** list, collapsed by
+default so it is not clutter. It shows everything the agent will act on this
+session regardless of moment or whether its card was dismissed, with when each
+applies and which have stopped asking:
+
+```
+Being followed now — 5
+  Explain in plain language                              whole session
+  Do not commit or push without asking first             before a commit
+  Give me the commands so I can run them myself          before a commit
+  Open the result so I can see it                        after a change
+  Explain the approach and wait for approval             before a change
+```
+
+The same list is available to the agent through the `preferences` action, so
+asking it in chat works too. Its description names that use explicitly —
+without it the agent had no reason to think a tool for merging and retiring
+could answer *"what rules are you applying?"*
+
 Because of this, an empty panel now distinguishes *"nothing applies right
 now"* from *"nothing learned yet"* — otherwise a quiet panel reads as a broken
 one.

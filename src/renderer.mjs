@@ -149,12 +149,23 @@ export function renderHtml() {
   }
   .pill.on { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
   .pill.asking { border-color: var(--true-color-blue, #58a6ff); color: var(--true-color-blue, #58a6ff); }
+  .eff { margin-top: 0.5rem; }
+  .eff summary { cursor: pointer; color: var(--text-color-muted, #8b949e); font-size: 0.8rem; }
+  .eff ul { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+  .eff li { padding: 0.25rem 0; font-size: 0.82rem; border-top: 1px solid var(--border-color-default, #30363d); }
+  .eff .meta { color: var(--text-color-muted, #8b949e); font-size: 0.74rem; }
 </style>
 </head>
 <body>
 <h2>Adaptive hints</h2>
 <div class="sub" id="ctx">Loading…</div>
 <div id="hints"></div>
+<div class="eff">
+  <details>
+    <summary id="effsum">Being followed now</summary>
+    <ul id="efflist"></ul>
+  </details>
+</div>
 <div class="sent">
   <details>
     <summary id="sentsum">Accepted context sent to the agent</summary>
@@ -207,6 +218,23 @@ function ago(ts) {
   if (m < 60) return m + " min ago";
   const h = Math.round(m / 60);
   return h < 24 ? h + " h ago" : Math.round(h / 24) + " d ago";
+}
+
+function renderEffect() {
+  const list = (state.rules && state.rules.inEffect) || [];
+  const when = {
+    session_start: "whole session", before_changes: "before a change",
+    after_changes: "after a change", before_commit: "before a commit",
+    post_plan: "after a plan", every_prompt: "every message",
+  };
+  $("effsum").textContent = list.length
+    ? \`Being followed now — \${list.length}\`
+    : "Being followed now — nothing yet";
+  $("efflist").innerHTML = list.map(r => \`
+    <li>
+      <div>\${esc(r.rule)}</div>
+      <div class="meta">\${when[r.when] || esc(r.when)}\${r.status === "trusted" ? " · no longer asks" : ""}</div>
+    </li>\`).join("");
 }
 
 function renderSent() {
@@ -339,6 +367,7 @@ function renderInner() {
     });
   }
 
+  renderEffect();
   renderSent();
 }
 
