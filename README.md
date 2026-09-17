@@ -422,7 +422,7 @@ already ranked first, and the counters can never self-correct.
 | Action | Purpose |
 | --- | --- |
 | `remember_preference` | Record a durable preference the user stated. Cannot activate anything. |
-| `preferences` | List learned preferences; merge or retire one. |
+| `preferences` | List learned preferences; merge two, or forget this session's own observation. |
 | `propose` | Retrieve → rank → gate → display. Logs an impression per hint shown. |
 | `record_outcome` | `accepted` / `rejected` / `ignored` / `preempted`. Rejects unknown hint IDs. |
 | `stats` | Phase-5 evaluation metrics + learned per-type counters. |
