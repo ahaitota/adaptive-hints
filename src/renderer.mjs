@@ -95,14 +95,17 @@ export function renderHtml() {
     border: 1px dashed var(--border-color-default, #30363d);
     border-radius: 0.55rem; padding: 1.15rem; color: var(--text-color-muted, #8b949e);
   }
-  .sent { margin-top: 1.4rem; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 0.85rem; }
-  .sent > details > summary {
+  .sent, .eff { margin-top: 1.4rem; border-top: 1px solid var(--border-color-default, #30363d); padding-top: 0.85rem; }
+  .sent > details > summary, .eff > details > summary {
     cursor: pointer; color: var(--text-color-muted, #8b949e);
     font-size: 0.85rem; list-style: none; user-select: none;
   }
-  .sent > details > summary::-webkit-details-marker { display: none; }
-  .sent > details > summary::before { content: "\\25B8"; display: inline-block; margin-right: 0.4rem; transition: transform .12s; }
-  .sent > details[open] > summary::before { transform: rotate(90deg); }
+  .sent > details > summary::-webkit-details-marker,
+  .eff > details > summary::-webkit-details-marker { display: none; }
+  .sent > details > summary::before,
+  .eff > details > summary::before { content: "\\25B8"; display: inline-block; margin-right: 0.4rem; transition: transform .12s; }
+  .sent > details[open] > summary::before,
+  .eff > details[open] > summary::before { transform: rotate(90deg); }
   .inj { border: 1px solid var(--border-color-default, #30363d); border-radius: 0.4rem; margin-top: 0.55rem; }
   .inj > summary {
     cursor: pointer; padding: 0.4rem 0.7rem; list-style: none; user-select: none;
@@ -149,10 +152,11 @@ export function renderHtml() {
   }
   .pill.on { border-color: var(--true-color-green, #3fb950); color: var(--true-color-green, #3fb950); }
   .pill.asking { border-color: var(--true-color-blue, #58a6ff); color: var(--true-color-blue, #58a6ff); }
-  .eff { margin-top: 0.5rem; }
-  .eff summary { cursor: pointer; color: var(--text-color-muted, #8b949e); font-size: 0.8rem; }
-  .eff ul { list-style: none; margin: 0.4rem 0 0; padding: 0; }
-  .eff li { padding: 0.25rem 0; font-size: 0.82rem; border-top: 1px solid var(--border-color-default, #30363d); }
+  .eff ul { list-style: none; margin: 0; padding: 0; }
+  .eff li {
+    border: 1px solid var(--border-color-default, #30363d); border-radius: 0.4rem;
+    margin-top: 0.55rem; padding: 0.4rem 0.7rem; font-size: 0.85rem;
+  }
   .eff .meta { color: var(--text-color-muted, #8b949e); font-size: 0.74rem; }
   .eff .effrow { display: flex; align-items: center; gap: 0.5rem; }
   .eff .effrow > div:first-child { flex: 1; min-width: 0; }
