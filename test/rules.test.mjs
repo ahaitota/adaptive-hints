@@ -11,7 +11,7 @@ import {
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, updateRules, ruleMenu, isOnDeck,
-    acceptedIn, markAccepted, ACCEPTED_DIR,
+    acceptedIn, markAccepted, ACCEPTED_DIR, forgetObservation,
 } from "../src/rules.mjs";
 import { join } from "node:path";
 import { rmSync, existsSync } from "node:fs";
@@ -271,8 +271,12 @@ console.log("=".repeat(62));
     })());
 
     // No Restore button: saying it again is the user changing their mind.
+    // Revival returns it to candidate; promote() is what puts it back, so the
+    // three-session rule still holds.
     addObservation(s, { ruleId: r.id, sessionId: "D", quote: "q" });
-    check("stating it again brings it straight back", r.status === "active" && r.declineStreak === 0);
+    check("stating it again clears the declines", r.declineStreak === 0);
+    promote(s);
+    check("stating it again brings it straight back", r.status === "active", `status=${r.status}`);
     check("its whole history is still there", r.observations.length === 4 && r.rejects === 3);
 }
 
@@ -315,6 +319,7 @@ console.log("=".repeat(62));
     const again = addObservation(s, { rule: "Test rule", sessionId: "D", quote: "q" });
     check("re-stating it while off does not create a second rule",
         again.id === r.id && s.rules.length === 1, `${s.rules.length} rules`);
+    promote(s);
     check("...and it comes back, since there is no Restore button to press",
         r.status === "active", `status=${r.status}`);
     check("the new evidence is still recorded", r.observations.length === 4);
@@ -541,6 +546,80 @@ console.log("=".repeat(62));
     rmSync(join(ACCEPTED_DIR, `${sid}.json`), { force: true });
     check("the test left no file behind",
         !existsSync(join(ACCEPTED_DIR, `${sid}.json`)));
+}
+
+// --- Reviving a preference cannot bypass the session guarantee -------------
+//
+// Found by the user's Czech test: a rule retired with one observation came
+// straight back as active when restated, so a single session promoted its own
+// rule. Revival now returns it to candidate and promote() still decides.
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Reply in Czech", sessionId: "S1", quote: "in czech" });
+    promote(s);
+    retireRule(s, r.id);
+    addObservation(s, { rule: "Reply in Czech", sessionId: "S1", quote: "czech again" });
+    promote(s);
+    check("one session restating a retired rule does NOT reactivate it",
+        r.status === "candidate", `status was ${r.status}`);
+
+    addObservation(s, { rule: "Reply in Czech", sessionId: "S2", quote: "czech" });
+    addObservation(s, { rule: "Reply in Czech", sessionId: "S3", quote: "czech" });
+    promote(s);
+    check("three different sessions still activate it",
+        r.status === "active", `status was ${r.status}`);
+
+    // A genuine decline, from a rule that already had enough evidence.
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "rejected");
+    recordRuleOutcome(s, r.id, "rejected");
+    check("three declines stop it", r.status === "declined");
+    addObservation(s, { rule: "Reply in Czech", sessionId: "S4", quote: "czech please" });
+    promote(s);
+    check("restating a declined rule with enough sessions brings it straight back",
+        r.status === "active", `status was ${r.status}`);
+}
+
+// --- An agent can undo its own observation, and nothing else ---------------
+{
+    const s = store();
+    const r = addObservation(s, { rule: "Reply in Czech", sessionId: "S1", quote: "czech" });
+    addObservation(s, { ruleId: r.id, sessionId: "S2", quote: "czech again" });
+
+    const out = forgetObservation(s, r.id, "S1");
+    check("forgetting removes only this session's observation",
+        out.removed === 1 && r.observations.length === 1 && r.observations[0].sessionId === "S2");
+    check("the rule survives while another session's evidence remains",
+        out.deleted === false && s.rules.length === 1);
+
+    const gone = forgetObservation(s, r.id, "S2");
+    check("the rule is deleted once no evidence is left",
+        gone.deleted === true && s.rules.length === 0);
+
+    const s2 = store();
+    const a = addObservation(s2, { rule: "Plain language", sessionId: "A", quote: "q" });
+    addObservation(s2, { ruleId: a.id, sessionId: "B", quote: "q" });
+    addObservation(s2, { ruleId: a.id, sessionId: "C", quote: "q" });
+    promote(s2);
+    let blocked = false;
+    try {
+        forgetObservation(s2, a.id, "A");
+    } catch {
+        blocked = true;
+    }
+    check("an active preference cannot be forgotten by the agent",
+        blocked && a.observations.length === 3);
+
+    let needsSession = false;
+    const s3 = store();
+    const c = addObservation(s3, { rule: "One off", sessionId: "X", quote: "q" });
+    try {
+        forgetObservation(s3, c.id, null);
+    } catch {
+        needsSession = true;
+    }
+    check("forgetting requires a session, so it cannot wipe a rule wholesale",
+        needsSession && s3.rules.length === 1);
 }
 
 console.log("=".repeat(62));

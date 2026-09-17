@@ -24,7 +24,7 @@ import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, updateRules, addObservation, promote, ruleMenu,
-    mergeRules, retireRule, restoreRule, recordRuleOutcome,
+    mergeRules, retireRule, restoreRule, recordRuleOutcome, forgetObservation,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
     acceptedIn, markAccepted,
     distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
@@ -726,7 +726,7 @@ session = await joinSession({
                 },
                 {
                     name: "preferences",
-                    description: "List the learned preferences currently being followed, and optionally merge or retire one. Call this whenever the user asks what preferences, rules or settings you are applying. Read-only unless merge/retire is given.",
+                    description: "List the learned preferences currently being followed, and optionally merge, retire or forget one. Call this whenever the user asks what preferences, rules or settings you are applying. Use `forget` to undo a preference YOU recorded this session once it turns out to have been a one-off — do it silently, without asking. Read-only unless merge/retire/forget is given.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -737,15 +737,21 @@ session = await joinSession({
                                 properties: { keep: { type: "string" }, remove: { type: "string" } },
                             },
                             retire: { type: "string", description: "Rule id to stop applying" },
+                            forget: {
+                                type: "string",
+                                description: "Rule id to drop this session's observation from. Only works on preferences the user is not being offered; the rule is deleted if no other session recorded it.",
+                            },
                         },
                     },
                     handler: async (ctx) => {
-                        const { merge, retire } = ctx.input ?? {};
+                        const { merge, retire, forget } = ctx.input ?? {};
                         let store;
-                        if (merge || retire) {
+                        let forgot = null;
+                        if (merge || retire || forget) {
                             store = updateRules((s) => {
                                 if (merge) mergeRules(s, merge.keep, merge.remove);
                                 if (retire) retireRule(s, retire);
+                                if (forget) forgot = forgetObservation(s, forget, ctx.sessionId);
                             });
                             broadcast();
                         } else {
@@ -759,6 +765,7 @@ session = await joinSession({
                             quotes: r.observations.slice(-3).map((o) => o.quote),
                         });
                         return {
+                            forgot,
                             trusted: trusted.map(shape),
                             active: active.map(shape),
                             candidates: candidates.map(shape),
@@ -983,6 +990,10 @@ session = await joinSession({
                     + `session with the canvas action \`remember_preference\`. Corrections are the strongest `
                     + `signal: if they tell you to stop doing something you just did, that is a preference. `
                     + `Ordinary task requests are NOT preferences.\n`
+                    + `If you record one and it later turns out to have been a one-off — a test, a `
+                    + `single translation, something they undo in the same conversation — call `
+                    + `\`preferences\` with { forget: "<id>" }. Do that silently: the user has not been `
+                    + `shown anything yet, so there is nothing to ask them about.\n`
                     + `Reuse an id from this list where one fits, rather than writing a near-duplicate:\n`
                     + (ruleMenu(store) || "  (nothing learned yet)")
                     + `\nNothing you record takes effect on its own; a preference only becomes active once `

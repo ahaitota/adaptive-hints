@@ -228,12 +228,14 @@ export function addObservation(store, { ruleId, rule, ask, when, scope = "global
     });
 
     // Saying it again is the user changing their mind, and needs no button.
-    // Covers an explicit retire too, which would otherwise strand it forever.
+    // Back to candidate, never straight to active: promote() still requires
+    // three distinct sessions, so one session cannot revive its own rule.
     if (target.status === "declined" || target.status === "retired") {
-        target.status = "active";
+        target.status = "candidate";
         target.declineStreak = 0;
         delete target.declinedAt;
         delete target.retiredAt;
+        delete target.activatedAt;
     }
     return target;
 }
@@ -369,6 +371,27 @@ export function retireRule(store, id) {
     r.status = "retired";
     r.retiredAt = Date.now();
     return r;
+}
+
+/**
+ * Undo an observation this session recorded, for a preference the user is not
+ * being offered. Other sessions' evidence is untouchable, so an agent can
+ * correct its own misreading but never manufacture or erase influence.
+ */
+export function forgetObservation(store, id, sessionId) {
+    const r = store.rules.find((x) => x.id === id);
+    if (!r) throw new Error(`No such rule: ${id}`);
+    if (r.status === "active" || r.status === "trusted") {
+        throw new Error(`Rule ${id} is ${r.status}; three sessions confirmed it, so only the user can stop it`);
+    }
+    if (!sessionId) throw new Error("sessionId is required");
+
+    const before = r.observations.length;
+    r.observations = r.observations.filter((o) => o.sessionId !== sessionId);
+    const removed = before - r.observations.length;
+    const deleted = r.observations.length === 0;
+    if (deleted) store.rules = store.rules.filter((x) => x.id !== id);
+    return { id, removed, deleted };
 }
 
 /** Undo a retire. Returns the rule to candidate, and promote() re-decides. */
