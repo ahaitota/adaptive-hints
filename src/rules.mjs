@@ -386,6 +386,35 @@ export function retiredRules(store = loadRules()) {
     return store.rules.filter((r) => r.status === "retired");
 }
 
+// --- What the user accepted in this conversation ---------------------------
+// A rule is followed once accepted here, or once trusted. Nothing is applied
+// on evidence alone: silence must never read as consent.
+const ACCEPTED_DIR = join(RULES_DIR, "accepted");
+export { ACCEPTED_DIR };
+
+function acceptedPath(sessionId) {
+    const safe = String(sessionId || "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
+    return join(ACCEPTED_DIR, `${safe}.json`);
+}
+
+export function acceptedIn(sessionId) {
+    const p = acceptedPath(sessionId);
+    if (!existsSync(p)) return new Set();
+    try {
+        return new Set(JSON.parse(readFileSync(p, "utf8")));
+    } catch {
+        return new Set();
+    }
+}
+
+export function markAccepted(sessionId, ruleId) {
+    mkdirSync(ACCEPTED_DIR, { recursive: true });
+    const seen = acceptedIn(sessionId);
+    seen.add(ruleId);
+    writeFileSync(acceptedPath(sessionId), JSON.stringify([...seen]), "utf8");
+    return seen;
+}
+
 // --- What has already been answered in this conversation -------------------
 // Keeps an answered card off the deck, and stops a reload counting it twice.
 const ANSWERED_DIR = join(RULES_DIR, "answered");

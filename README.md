@@ -57,8 +57,8 @@ that nothing is activated.
 | Stage | Reached by | Behaviour |
 | --- | --- | --- |
 | **candidate** | fewer than 3 sessions | invisible, gathering evidence |
-| **active** | 3 different sessions state it | applied, and asks each time |
-| **trusted** | 5 accepts in a row | applied silently |
+| **active** | 3 different sessions state it | offered on a card; applied only if you accept |
+| **trusted** | 5 accepts in a row | applied automatically, without asking |
 | **declined** | 3 declines in a row | not shown; returns if stated again |
 
 Repetition and approval answer different questions. Repetition shows you
@@ -66,26 +66,28 @@ Repetition and approval answer different questions. Repetition shows you
 firing it at that moment helps, because you were never asked. So confirmation
 and silence are earned separately.
 
-**A rule is applied from the moment it becomes active — before you accept it.**
-The agent is told `follow for now` along with the card. The accept is not
-permission to start; it is a judgement on something that already happened.
+**Repetition earns the question, not the behaviour.** An active rule is not
+applied until you accept it. Accepting applies it for the rest of that
+conversation; the next one asks again, until five accepts in a row make it
+trusted.
 
-That is deliberate. Waiting for a click would ask you to approve a hypothetical
-— *would this have been useful?* — which is exactly the question repetition has
-already answered three times over. Applying it first turns the card into
-something you can actually judge: you have just seen the wording and the timing
-in practice, and the click says whether to keep them.
+This was not the original design. Active rules used to be handed to the agent
+with `follow for now`, on the reasoning that three separate statements had
+already settled the matter and a click should judge something that had actually
+happened. That reasoning had a hole:
 
-So the two applied stages differ only in whether they ask:
+> *"what if the person never accepts and it just stays there ignored, but the
+> agent still follows them without user knowing?"*
 
-| | Applied? | Asks? |
-| --- | --- | --- |
-| **active** | yes | every time — *keep this?* |
-| **trusted** | yes | no |
+Nothing expired. A card that was never clicked was applied in every session,
+indefinitely, and the quieter the system got — auto-opening panel, no chat
+mention, cards vanishing once answered — the less chance there was of ever
+noticing. **Not clicking is not consent**, and a system that treats silence as
+approval will eventually be wrong in a way nobody can see.
 
-The risk this accepts is that a badly worded rule acts once before you can stop
-it. The price of the alternative is that a preference you stated in three
-separate conversations still does nothing until you find a panel and click.
+The cost is real: a preference you have stated three times does nothing until
+you click. That is the right way round, because the failure is visible and
+recoverable, where the other one is neither.
 
 One rejection resets the streak and pulls a trusted rule back to asking. A rule
 that is wrong once will be wrong again, and silence is exactly when being wrong

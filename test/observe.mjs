@@ -33,14 +33,14 @@ if (has("list") || !argv.length) {
     if (!store.rules.length) {
         console.log(`  Nothing learned yet.\n`);
     } else {
-        console.log(`  APPLIED NOW, WITHOUT ASKING (accepted 5 times running)`);
+        console.log(`  APPLIED AUTOMATICALLY (accepted 5 times running, no longer asks)`);
         if (!trusted.length) console.log(`    none yet`);
         for (const r of trusted) {
             console.log(`    ${r.id}  ${r.rule}`);
             console.log(`        when: ${r.when}   scope: ${r.scope}   `
                 + `${distinctSessions(r)} sessions, ${distinctRepositories(r)} repos`);
         }
-        console.log(`\n  APPLIED NOW, AND ASKS EACH TIME (the ask is whether to keep it)`);
+        console.log(`\n  OFFERED, APPLIED ONLY IF YOU ACCEPT (asks each session)`);
         if (!active.length) console.log(`    none yet — needs 3 different sessions`);
         for (const r of active) {
             console.log(`    ${r.id}  ${r.rule}`);
@@ -48,7 +48,7 @@ if (has("list") || !argv.length) {
                 + `${distinctSessions(r)} sessions, ${distinctRepositories(r)} repos   `
                 + `${r.acceptStreak ?? 0}/5 accepts in a row`);
         }
-        console.log(`\n  NOT APPLIED YET (needs 3 different sessions)`);
+        console.log(`\n  NOT OFFERED YET (needs 3 different sessions)`);
         if (!candidates.length) console.log(`    none`);
         for (const r of candidates) {
             console.log(`    ${r.id}  ${r.rule}   [${distinctSessions(r)}/3 sessions]`);

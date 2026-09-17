@@ -26,6 +26,7 @@ import {
     loadRules, updateRules, addObservation, promote, ruleMenu,
     mergeRules, retireRule, restoreRule, recordRuleOutcome,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
+    acceptedIn, markAccepted,
     distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
 } from "./src/rules.mjs";
 import {
@@ -180,16 +181,12 @@ function contextForMoment(moment, repository, sessionId) {
         lines.push(`[adaptive-hints] Remembered preference(s) for right now:\n`
             + silent.map((r) => `  - ${r.rule}`).join("\n"));
     }
-    if (asking.length) {
-        lines.push(`[adaptive-hints] Waiting for approval in the panel, follow for now:\n`
-            + asking.map((r) => `  - ${r.rule}`).join("\n"));
-    }
+    // An unaccepted rule is offered, never applied. It reaches the agent only
+    // when the user accepts it, because never clicking is not consent.
     markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@${moment}`));
-    // Only something the user can answer is worth taking the panel for. A
-    // trusted preference has earned the right to stay quiet.
     if (asking.length) showPanel();
     else broadcast();
-    return lines.join("\n\n");
+    return lines.length ? lines.join("\n\n") : null;
 }
 
 /** Current panel state: the active proposal plus derived learning metrics. */
@@ -220,6 +217,7 @@ function currentState(sessionId) {
             const { trusted, active, candidates, dropped } = describe(syncedRules());
             const answered = answeredIn(sessionId);
             const delivered = saidIn(sessionId);
+            const acceptedHere = acceptedIn(sessionId);
             const shape = (r) => ({
                 id: r.id, rule: r.rule, ask: r.ask ?? null, when: r.when, scope: r.scope, status: r.status,
                 sessions: distinctSessions(r), repositories: distinctRepositories(r),
@@ -241,9 +239,12 @@ function currentState(sessionId) {
                 // Confirmed, but their moment has not come round yet. Lets the
                 // empty panel say "not now" rather than "nothing learned".
                 waitingForMoment: ready.filter((r) => !delivered.has(`${r.id}@${r.when}`)).length,
-                // Everything the agent will follow this session, regardless of
-                // moment or whether its card has been answered and dismissed.
-                inEffect: [...trusted, ...active].map((r) => ({
+                // Only what is genuinely being followed: trusted always, and an
+                // active rule only once the user accepted it in this session.
+                inEffect: [
+                    ...trusted,
+                    ...active.filter((r) => acceptedHere.has(r.id)),
+                ].map((r) => ({
                     id: r.id, rule: r.rule, when: r.when, scope: r.scope, status: r.status,
                 })),
             };
@@ -521,24 +522,34 @@ async function startServer(instanceId, sessionId) {
                         // conversation, so the click visibly does something and
                         // a reload cannot answer the same card twice.
                         markAnswered(sessionId, outcome.id);
-                        // ...and leave a trace the user can read. Accepting a
-                        // preference sends no new text to the agent — it is
-                        // already being applied — so without this the click
-                        // showed up nowhere at all.
+                        if (outcome.outcome === "accepted") {
+                            // The click is what starts it. Queued here so it
+                            // reaches the agent with the user's next message.
+                            markAccepted(sessionId, outcome.id);
+                            queueAcceptedContext(
+                                sessionId,
+                                `[adaptive-hints] The user approved this preference just now. `
+                                + `Follow it for the rest of this session:\n  - ${answered.rule}\n\n`
+                                + `Say nothing about it.`,
+                            );
+                        }
                         logInjection(
                             sessionId,
                             outcome.outcome === "accepted" ? "preference_accepted" : "preference_declined",
                             outcome.outcome === "accepted"
                                 ? `You accepted: ${answered.rule}\n\n`
-                                  + `It is being followed from now on in this session.`
+                                  + `It reaches the agent with your next message, and is followed `
+                                  + `for the rest of this session.`
                                   + (answered.status === "trusted"
-                                      ? ` It has now been accepted enough times that it will stop asking.`
+                                      ? ` It has now been accepted enough times that it will `
+                                        + `apply automatically from now on, without asking.`
                                       : ``)
                                 : `You declined: ${answered.rule}\n\n`
+                                  + `It was not applied.`
                                   + (answered.status === "declined"
-                                      ? `Declined enough times that it will stop offering itself. `
+                                      ? ` Declined enough times that it will stop offering itself. `
                                         + `Say it again any time to bring it back.`
-                                      : `It will be offered again next session.`),
+                                      : ` It will be offered again next session.`),
                         );
                     }
                     broadcast();
@@ -958,20 +969,8 @@ session = await joinSession({
                     logInjection(sessionId, "active_rules", silent.map((r) => r.rule).join("; "));
                 }
 
-                // Confirmed, but not yet trusted. Repetition showed the user
-                // meant it; it has not yet shown that the rule was written down
-                // correctly or fires at a useful moment. So it asks.
-                if (asking.length) {
-                    parts.push(
-                        `[adaptive-hints] ${asking.length} learned preference(s) are waiting for approval:\n`
-                        + asking.map((r) => `  - ${r.rule}`).join("\n")
-                        + `\n\nFollow them for now. Do NOT mention them, the panel or this message to the `
-                        + `user — the panel opens on its own and is the only place this belongs.`,
-                    );
-                }
-
-                // Marked delivered so the panel can show exactly what the agent
-                // was told, and nothing it was not.
+                // Confirmed by repetition, but not yet approved. Offered on a
+                // card only: the agent is deliberately not told to follow it.
                 markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@session_start`));
                 if (asking.length) showPanel();
 

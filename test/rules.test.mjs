@@ -11,6 +11,7 @@ import {
     recordRuleOutcome, silentRules, askingRules, answeredIn, markAnswered, ANSWERED_DIR,
     saidIn, markSaid, SAID_DIR,
     distinctSessions, distinctRepositories, loadRules, saveRules, updateRules, ruleMenu, isOnDeck,
+    acceptedIn, markAccepted, ACCEPTED_DIR,
 } from "../src/rules.mjs";
 import { join } from "node:path";
 import { rmSync, existsSync } from "node:fs";
@@ -507,6 +508,39 @@ console.log("=".repeat(62));
     check("no temp file is left beside it",
         !existsSync(`${path}.${process.pid}.tmp`));
     rmSync(path, { force: true });
+}
+
+// --- Nothing is applied without consent ------------------------------------
+//
+// An unaccepted rule used to be handed to the agent with "follow for now". A
+// user who never clicked had it applied in every session, indefinitely, with
+// no way to know. Repetition earns the question, not the behaviour.
+{
+    const sid = `accept-test-${process.pid}`;
+    check("nothing is accepted in a fresh conversation",
+        acceptedIn(sid).size === 0);
+
+    markAccepted(sid, "r1");
+    check("accepting records it for this conversation",
+        acceptedIn(sid).has("r1"));
+
+    check("accepting one rule does not accept another",
+        !acceptedIn(sid).has("r2"));
+
+    markAccepted(sid, "r2");
+    check("a second acceptance joins the first",
+        acceptedIn(sid).size === 2 && acceptedIn(sid).has("r1"));
+
+    check("acceptance does not leak into another conversation",
+        acceptedIn(`${sid}-other`).size === 0);
+
+    markAccepted(sid, "r1");
+    check("accepting twice is not counted twice",
+        acceptedIn(sid).size === 2);
+
+    rmSync(join(ACCEPTED_DIR, `${sid}.json`), { force: true });
+    check("the test left no file behind",
+        !existsSync(join(ACCEPTED_DIR, `${sid}.json`)));
 }
 
 console.log("=".repeat(62));
