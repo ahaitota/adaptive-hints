@@ -74,6 +74,36 @@ function broadcast() {
     }
 }
 
+// Opening the panel is the whole notification: it is how the user learns a
+// preference is in play, so the chat never has to mention it.
+//
+// Once per session. Each session runs its own process, so this flag is already
+// per-conversation. Re-opening at every moment would fight a user who closed
+// it, and a panel that argues is the fatigue this project exists to avoid.
+let panelShown = false;
+
+async function showPanel() {
+    if (panelShown) {
+        broadcast();
+        return;
+    }
+    panelShown = true;
+    try {
+        const open = (session?.openCanvases ?? []).some((c) => c.canvasId === "adaptive-hints");
+        if (open) {
+            broadcast();
+            return;
+        }
+        await session?.rpc?.canvas?.open({
+            canvasId: "adaptive-hints",
+            instanceId: "adaptive-hints",
+            input: {},
+        });
+    } catch {
+        // A panel that will not open is never worth failing a hook over.
+    }
+}
+
 /**
  * Load the rules, promoting anything that has earned it.
  *
@@ -155,6 +185,10 @@ function contextForMoment(moment, repository, sessionId) {
             + asking.map((r) => `  - ${r.rule}`).join("\n"));
     }
     markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@${moment}`));
+    // Only something the user can answer is worth taking the panel for. A
+    // trusted preference has earned the right to stay quiet.
+    if (asking.length) showPanel();
+    else broadcast();
     return lines.join("\n\n");
 }
 
@@ -399,8 +433,7 @@ async function startServer(instanceId, sessionId) {
             return;
         }
 
-        if (url.pathname === "/state") {
-            res.writeHead(200, { "Content-Type": "application/json" });
+        if (url.pathname === "/state") {            res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify(currentState(sessionId)));
             return;
         }
@@ -908,14 +941,14 @@ session = await joinSession({
                 const asking = askingRules({ moment: "session_start", repository }, store);
                 const parts = [];
 
-                // Trusted rules have been accepted five times running. They are
-                // applied without asking, but never without saying so.
+                // Trusted rules have been accepted five times running, so they
+                // apply without asking and without narrating it.
                 if (silent.length) {
                     parts.push(
                         `[adaptive-hints] ${silent.length} remembered preference(s) applied:\n`
                         + silent.map((r) => `  - ${r.rule}`).join("\n")
-                        + `\n\nFollow these. Say once, briefly, that you are applying `
-                        + `${silent.length} remembered preference(s), and that the panel lists them.`,
+                        + `\n\nFollow these. Say nothing about them: the panel is where the user sees `
+                        + `what is in play, and repeating it in chat is noise.`,
                     );
                     logInjection(sessionId, "active_rules", silent.map((r) => r.rule).join("; "));
                 }
@@ -925,17 +958,17 @@ session = await joinSession({
                 // correctly or fires at a useful moment. So it asks.
                 if (asking.length) {
                     parts.push(
-                        `[adaptive-hints] ${asking.length} learned preference(s) are waiting for approval `
-                        + `in the "Adaptive hints" panel:\n`
+                        `[adaptive-hints] ${asking.length} learned preference(s) are waiting for approval:\n`
                         + asking.map((r) => `  - ${r.rule}`).join("\n")
-                        + `\n\nFollow them for now, and mention in one short sentence that they can be `
-                        + `accepted or rejected in the panel.`,
+                        + `\n\nFollow them for now. Do NOT mention them, the panel or this message to the `
+                        + `user — the panel opens on its own and is the only place this belongs.`,
                     );
                 }
 
                 // Marked delivered so the panel can show exactly what the agent
                 // was told, and nothing it was not.
                 markSaid(sessionId, [...silent, ...asking].map((r) => `${r.id}@session_start`));
+                if (asking.length) showPanel();
 
                 // The noticing instruction. Capped at one per session on
                 // purpose: an agent invited to record a preference every turn

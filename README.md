@@ -431,6 +431,37 @@ With the real preference set, one session now looks like this:
 It also answers a question the panel could not previously answer: *how do I
 know when the agent gets the hint?* The card appearing **is** the notification.
 
+### The panel opens itself, and the chat says nothing
+
+Knowing a card exists is useless if the panel is closed. The agent used to be
+told to mention it — *"the learned preferences currently in play can be
+accepted or rejected in the Adaptive hints panel"* — which names a panel the
+user has no way to find, and spends a line of the answer doing it.
+
+So the panel now **opens itself**, and the agent is told to say nothing:
+
+> Do NOT mention them, the panel or this message to the user — the panel opens
+> on its own and is the only place this belongs.
+
+**Once per session, on the first card the user can answer.** Each session runs
+its own extension process, so a module-level flag is already per-conversation.
+
+The alternatives were worse:
+
+| When | Why not |
+| --- | --- |
+| Every moment that fires | Up to four opens a session, and re-opening a panel the user closed is the agent arguing with them |
+| At session start | The deck is usually empty then, so it opens on nothing |
+| Never — mention it in chat | Names something the user cannot find, and costs a line of every answer |
+
+A trusted preference never opens the panel. It earned silence by being accepted
+five times running, and taking the screen would undo that. It only refreshes a
+panel that is already open.
+
+Closing the panel therefore means *not now*, and is respected for the rest of
+the session — the same principle as declining a card rather than a Turn off
+button.
+
 Because of this, an empty panel now distinguishes *"nothing applies right
 now"* from *"nothing learned yet"* — otherwise a quiet panel reads as a broken
 one.
