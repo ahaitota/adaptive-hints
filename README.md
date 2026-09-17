@@ -20,6 +20,10 @@ Requires **Node 22 or newer** (it uses `node:sqlite`) and the GitHub Copilot
 app or CLI. There are no dependencies to install — the Copilot SDK is resolved
 for you.
 
+```bash
+node --version    # must be v22 or higher
+```
+
 Clone it into your Copilot extensions folder:
 
 ```powershell
@@ -34,11 +38,25 @@ git clone https://github.com/ahaitota/adaptive-hints.git \
   ~/.copilot/extensions/adaptive-hints
 ```
 
-The folder name matters: extensions are discovered as immediate subdirectories
-of `~/.copilot/extensions/`. If `COPILOT_HOME` is set, use that instead of
-`~/.copilot`.
+**Keep the folder name `adaptive-hints`.** Extensions are only discovered as
+immediate subdirectories of `~/.copilot/extensions/`, and that name is also
+where preferences are stored — rename it and the two stop matching. If
+`COPILOT_HOME` is set, use that instead of `~/.copilot`.
 
 Then restart the Copilot app, or run `/extensions reload` in the CLI.
+
+### If nothing happens
+
+On an older Node the extension fails to load silently, because `node:sqlite`
+does not exist. Check the version first, then the log:
+
+```
+~/.copilot/logs/extensions/user-adaptive-hints-*.log
+```
+
+There is one log per launch. The **running** one ends with `=== ready ===`;
+older files ending in `stopped-normally` are just previous reloads, not
+errors. A real failure shows the exception instead.
 
 ## Check it loaded
 
