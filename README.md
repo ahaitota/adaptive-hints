@@ -69,7 +69,3 @@ folder:
 
 It holds quotes from your conversations, so it is gitignored and never leaves
 your machine. Nothing is sent anywhere. Delete the folder to reset everything.
-
-The same applies to `docs/`, which holds the design notes and evaluation plan.
-They quote real conversations, so they stay local rather than shipping with the
-code.
