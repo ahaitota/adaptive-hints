@@ -24,7 +24,7 @@ import { extractUserTask } from "./src/prompt-filter.mjs";
 import { changedFiles } from "./src/changed-files.mjs";
 import {
     loadRules, updateRules, addObservation, promote, ruleMenu,
-    mergeRules, retireRule, restoreRule, recordRuleOutcome, forgetObservation,
+    mergeRules, recordRuleOutcome, forgetObservation,
     silentRules, askingRules, answeredIn, markAnswered, saidIn, markSaid,
     acceptedIn, markAccepted,
     distinctSessions, distinctRepositories, describe, isOnDeck, MOMENTS,
@@ -482,7 +482,7 @@ async function startServer(instanceId, sessionId) {
             return;
         }
 
-        // Merge and retire from the panel. Same body handling as /outcome: the
+        // Merge and answer from the panel. Same body handling as /outcome: the
         // chunks are concatenated before decoding, because decoding each chunk
         // separately corrupts any multi-byte character split across a TCP
         // boundary, and rule text is user-written so it will contain them.
@@ -506,12 +506,10 @@ async function startServer(instanceId, sessionId) {
             req.on("end", () => {
                 if (aborted) return;
                 try {
-                    const { merge, retire, restore, outcome } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+                    const { merge, outcome } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
                     let answered = null;
                     updateRules((store) => {
                         if (merge) mergeRules(store, merge.keep, merge.remove);
-                        if (retire) retireRule(store, retire);
-                        if (restore) restoreRule(store, restore);
                         if (outcome) {
                             const r = recordRuleOutcome(store, outcome.id, outcome.outcome);
                             answered = { rule: r.rule, status: r.status };
@@ -726,7 +724,7 @@ session = await joinSession({
                 },
                 {
                     name: "preferences",
-                    description: "List the learned preferences currently being followed, and optionally merge, retire or forget one. Call this whenever the user asks what preferences, rules or settings you are applying. Use `forget` to undo a preference YOU recorded this session once it turns out to have been a one-off — do it silently, without asking. Read-only unless merge/retire/forget is given.",
+                    description: "List the learned preferences currently being followed, and optionally merge or forget one. Call this whenever the user asks what preferences, rules or settings you are applying. Use `forget` to undo a preference YOU recorded this session once it turns out to have been a one-off — do it silently, without asking. You cannot stop a preference the user is being offered: that is their decision, made by declining the card. Read-only unless merge/forget is given.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -736,7 +734,6 @@ session = await joinSession({
                                 required: ["keep", "remove"],
                                 properties: { keep: { type: "string" }, remove: { type: "string" } },
                             },
-                            retire: { type: "string", description: "Rule id to stop applying" },
                             forget: {
                                 type: "string",
                                 description: "Rule id to drop this session's observation from. Only works on preferences the user is not being offered; the rule is deleted if no other session recorded it.",
@@ -744,13 +741,12 @@ session = await joinSession({
                         },
                     },
                     handler: async (ctx) => {
-                        const { merge, retire, forget } = ctx.input ?? {};
+                        const { merge, forget } = ctx.input ?? {};
                         let store;
                         let forgot = null;
-                        if (merge || retire || forget) {
+                        if (merge || forget) {
                             store = updateRules((s) => {
                                 if (merge) mergeRules(s, merge.keep, merge.remove);
-                                if (retire) retireRule(s, retire);
                                 if (forget) forgot = forgetObservation(s, forget, ctx.sessionId);
                             });
                             broadcast();

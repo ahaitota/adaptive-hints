@@ -136,6 +136,13 @@ This happens **silently**. A candidate is invisible and unapplied, so there is
 nothing to ask about — and *"shall I retire this rule?"* is meaningless to
 anyone who has not read the code.
 
+**The agent cannot retire a preference at all.** It once could, and used that
+instead of the undo it actually needed. A preference three sessions confirmed
+is the user's; the way to stop it is to decline the card three times, which the
+user does deliberately and can reverse by saying the thing again. `forget` and
+`retire` look similar and are opposites: one erases the agent's own guess, the
+other overrides the user's settled preference.
+
 ### When a preference arrives
 
 A preference carries the moment it belongs to, because the right moment is part
