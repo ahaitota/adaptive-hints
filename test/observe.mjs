@@ -28,25 +28,37 @@ const has = (name) => argv.includes(`--${name}`);
 const store = loadRules();
 
 if (has("list") || !argv.length) {
-    const { active, candidates } = describe(store);
+    const { trusted, active, candidates, dropped } = describe(store);
     console.log(`\nRules file: ${RULES_PATH}\n`);
     if (!store.rules.length) {
         console.log(`  Nothing learned yet.\n`);
     } else {
-        console.log(`  ACTIVE (applied automatically)`);
-        if (!active.length) console.log(`    none yet — needs 3 different sessions`);
-        for (const r of active) {
+        console.log(`  APPLIED AUTOMATICALLY (accepted 5 times running, no longer asks)`);
+        if (!trusted.length) console.log(`    none yet`);
+        for (const r of trusted) {
             console.log(`    ${r.id}  ${r.rule}`);
             console.log(`        when: ${r.when}   scope: ${r.scope}   `
                 + `${distinctSessions(r)} sessions, ${distinctRepositories(r)} repos`);
         }
-        console.log(`\n  CANDIDATES (seen, not yet trusted)`);
+        console.log(`\n  FOLLOWED, BUT STILL ASKS EACH TIME`);
+        if (!active.length) console.log(`    none yet — needs 3 different sessions`);
+        for (const r of active) {
+            console.log(`    ${r.id}  ${r.rule}`);
+            console.log(`        when: ${r.when}   scope: ${r.scope}   `
+                + `${distinctSessions(r)} sessions, ${distinctRepositories(r)} repos   `
+                + `${r.acceptStreak ?? 0}/5 accepts in a row`);
+        }
+        console.log(`\n  NOT YET CONFIRMED (needs 3 different sessions)`);
         if (!candidates.length) console.log(`    none`);
         for (const r of candidates) {
             console.log(`    ${r.id}  ${r.rule}   [${distinctSessions(r)}/3 sessions]`);
             for (const o of r.observations.slice(0, 2)) {
                 console.log(`        "${o.quote.slice(0, 74)}"`);
             }
+        }
+        if (dropped.length) {
+            console.log(`\n  STOPPED ASKING (declined repeatedly; say it again to bring it back)`);
+            for (const r of dropped) console.log(`    ${r.id}  ${r.rule}`);
         }
         console.log("");
     }
