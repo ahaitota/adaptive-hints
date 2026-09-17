@@ -202,6 +202,13 @@ A rule starts at the narrowest scope that fits and widens only on evidence —
 the same preference seen in three different repositories becomes global. One
 agent cannot decide something is universal, having seen one project.
 
+A chat session has no repository, and saying so matters. The repository was
+read as the last segment of the workspace path, but a chat session's workspace
+is `session-state/<uuid>` — so **every session looked like a brand new
+repository**, and three of them would have widened a repo-scoped rule to global
+by accident. A session id where a repository name belongs is now recorded as
+no repository at all.
+
 ### By hand
 
 ```
@@ -475,7 +482,6 @@ session confirms it, the other when the user states it again.
 **A card appears only once the agent has actually been told.** The deck is
 gated on the same per-session record that tracks what was said, so a visible
 card means the preference is in effect *right now* — not merely stored.
-
 This started as a visible inconsistency: the panel offered five cards the
 moment a session opened, while the agent had only received one. Four of the
 five were waiting on a moment that had not come round yet, and the agent
@@ -537,13 +543,26 @@ session regardless of moment or whether its card was dismissed, with when each
 applies and which have stopped asking:
 
 ```
-Being followed now — 5
-  Explain in plain language                              whole session
-  Do not commit or push without asking first             before a commit
-  Give me the commands so I can run them myself          before a commit
-  Open the result so I can see it                        after a change
-  Explain the approach and wait for approval             before a change
+Being followed now — 3
+  Explain in plain language          whole session · applied automatically  [Turn off]
+  Open the result so I can see it    after a change
+  Give me the commands               before a commit
 ```
+
+A preference that **applies automatically** carries a **Turn off** button, and
+it is the only thing in this list that does. A trusted rule never shows a card,
+so without it the only way to stop one was to wait for its moment to come round
+and press Decline — the list could show it but not act on it.
+
+Turning off sends the rule back to **active**: it asks again next session and
+must earn silence from zero. **No rejection is recorded.** The user is refusing
+the silence, not the preference, and storing an opinion they did not express
+would be the same error as treating silence as consent. The accept history is
+kept.
+
+It also tells the agent to stop immediately, because the rule was already in
+that session's context. Stopping something silently would repeat the mistake of
+applying something silently.
 
 The same list is available to the agent through the `preferences` action, so
 asking it in chat works too. Its description names that use explicitly —
