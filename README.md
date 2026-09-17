@@ -59,7 +59,7 @@ that nothing is activated.
 | **candidate** | fewer than 3 sessions | invisible, gathering evidence |
 | **active** | 3 different sessions state it | offered on a card; applied only if you accept |
 | **trusted** | 5 accepts in a row | applied automatically, without asking |
-| **declined** | 3 declines in a row | not shown; returns if stated again |
+| **declined** | 3 declines in a row | not shown; returns to candidate if stated again |
 
 Repetition and approval answer different questions. Repetition shows you
 **meant** it. It cannot show that the rule was written down correctly, or that
@@ -103,6 +103,38 @@ Saying the preference again brings it back. There is no *turn off* button and
 no *restore* button: both asked the user to manage storage, turning something
 off left a dead card in the deck, and *turn off* read almost the same as
 *decline*. A preference the user has turned away from is simply not shown.
+
+**Coming back means returning to candidate, not to active.** `promote()` still
+decides, so the three-session rule is never skipped on the way back. For a
+preference with real history this is invisible — three sessions already vouched
+for it, so the next promotion pass restores it immediately.
+
+It matters for the thin case. A rule recorded by one session, then judged a
+one-off and retired, used to come back as **active** the moment it was restated
+— one session promoting its own rule, which is the single thing this design
+promises cannot happen. Found by testing with a throwaway *"reply in Czech"*
+preference.
+
+### Undoing an observation the agent recorded
+
+`remember_preference` only writes, and retiring keeps the evidence. So an agent
+that recorded a one-off and then realised its mistake had no way to take it
+back. Asked to, it agreed and then did nothing, because nothing existed to do
+it with.
+
+`preferences` now takes `forget`, with two limits:
+
+- it removes only observations **this session** recorded, and
+- only for a preference the user is **not being offered** — once three sessions
+  confirm something, stopping it is the user's decision, not the agent's.
+
+If no other session vouched for the rule, it is deleted outright. An agent can
+undo its own misreading and nothing else: it can neither manufacture influence
+nor erase anyone else's.
+
+This happens **silently**. A candidate is invisible and unapplied, so there is
+nothing to ask about — and *"shall I retire this rule?"* is meaningless to
+anyone who has not read the code.
 
 ### When a preference arrives
 
